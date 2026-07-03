@@ -357,14 +357,17 @@
     <pre class="gp-prompt" id="pluginPrompt">Build a plugin for Jay (a macOS launcher). A plugin is a folder with two files:
 
 1) plugin.json
-{ "apiVersion": 1, "name": "&lt;App Name&gt;", "targetApp": "&lt;exact app name in the menu bar, or null for always-on&gt;", "exec": "adapter" }
+{ "apiVersion": 1, "name": "&lt;App Name&gt;", "targetApp": "&lt;exact app name in the menu bar, or null for always-on&gt;", "exec": "adapter", "supportsClose": false }
 
-2) An executable "adapter" (any language; chmod +x) that answers two commands:
+2) An executable "adapter" (any language; chmod +x) that answers these commands:
  • adapter list          → print a JSON array to stdout:
    [ { "id":"stable-unique-id", "title":"required", "subtitle":"optional", "url":"https://… (optional → favicon)", "group":"optional section", "active": false } ]
  • adapter activate &lt;id&gt;   → focus that item in the app (AppleScript / CLI / URL scheme); print nothing.
+ • adapter close &lt;id&gt;      → optional; close/dismiss that item. Set "supportsClose": true only if you implement it.
 
 Rules: keep `list` fast (&lt; 1s) and read-only; print [] when the app isn't ready.
+
+Full spec + a copy-paste example: https://github.com/spacegrowth/jay/tree/main/plugins  (read plugins/README.md; start from plugins/terminal).
 
 My app: &lt;NAME&gt;. How to read its open items and focus one: &lt;AppleScript / local API / URL scheme&gt;.
 Return the complete plugin.json and a runnable adapter script.</pre>

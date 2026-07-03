@@ -376,7 +376,9 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         let path = detail(PluginHost.root.path)
         let reveal = NSButton(title: "Reveal in Finder", target: self, action: #selector(revealPluginsFolder)); reveal.bezelStyle = .rounded
         let rescan = NSButton(title: "Rescan", target: self, action: #selector(rescanPlugins)); rescan.bezelStyle = .rounded
-        let acts = NSStackView(views: [reveal, rescan]); acts.orientation = .horizontal; acts.spacing = 8; acts.alignment = .centerY
+        let docs = NSButton(title: "Write a plugin →", target: self, action: #selector(openPluginDocs)); docs.bezelStyle = .rounded
+        docs.toolTip = "Open the plugin docs (manifest + list/activate/close) and a copyable example"
+        let acts = NSStackView(views: [reveal, rescan, docs]); acts.orientation = .horizontal; acts.spacing = 8; acts.alignment = .centerY
         pluginsBody.addArrangedSubview(card([path, acts]))
         pluginsBody.setCustomSpacing(7, after: head2)
 
@@ -444,6 +446,11 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         NSWorkspace.shared.activateFileViewerSelecting([PluginHost.root])
     }
     @objc private func rescanPlugins() { refreshPluginsPane() }
+    @objc private func openPluginDocs() {
+        if let url = URL(string: "https://github.com/spacegrowth/jay/blob/main/plugins/README.md") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
     /// One tab's content: a fixed-width column of (header + card) groups inside a view controller.
     /// The width constraint makes the view's fittingSize reliable, so NSTabViewController can size
