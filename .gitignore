@@ -4,3 +4,6 @@ app/*.dSYM/
 app/*.o
 *.log
 .DS_Store
+
+# installer artifact (goes to Releases)
+Jay-Installer.pkg

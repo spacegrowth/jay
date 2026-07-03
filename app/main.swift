@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import ServiceManagement
 
 // Jay — app entry + global trigger.
 // Double-tap an Option key to toggle a non-activating panel listing tabs/sessions
@@ -26,8 +27,14 @@ let trusted = AXIsProcessTrustedWithOptions(
 // background; denied/undecided just falls back to formatted numbers (best-effort).
 ContactNames.shared.requestAccess()
 
-// Default left-edge band (percent from top); only applied if the user hasn't set them.
-UserDefaults.standard.register(defaults: ["edgeBandTop": 3.0, "edgeBandBottom": 55.0, "showMenuIcon": true, "showContexts": true, "faviconLookup": true])
+// Defaults (only applied if the user hasn't set them). Edge summon ON by default; band = % from top.
+UserDefaults.standard.register(defaults: ["edgeTrigger": true, "edgeBandTop": 3.0, "edgeBandBottom": 55.0, "showMenuIcon": true, "showContexts": true, "faviconLookup": true])
+
+// First launch only: enable "open at login" once. Honors the user turning it off later.
+if !UserDefaults.standard.bool(forKey: "didInitLoginItem") {
+    UserDefaults.standard.set(true, forKey: "didInitLoginItem")
+    try? SMAppService.mainApp.register()
+}
 
 let settings = SettingsPanel()
 let switcher = SwitcherPanel()

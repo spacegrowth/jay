@@ -1,0 +1,10 @@
+#!/bin/bash
+# Runs as root at the end of install. Launch Jay as the logged-in user so it can
+# prompt for Accessibility (needed for the hotkey + screen-edge summon) and register
+# its "open at login" item on first run.
+consoleUser=$(stat -f%Su /dev/console)
+uid=$(id -u "$consoleUser")
+if [ -n "$uid" ] && [ "$consoleUser" != "root" ]; then
+  launchctl asuser "$uid" sudo -u "$consoleUser" open -a "/Applications/Jay.app" 2>/dev/null || true
+fi
+exit 0
