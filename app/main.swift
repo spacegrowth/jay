@@ -91,6 +91,10 @@ final class MenuController: NSObject {
 }
 let menuController = MenuController()
 
+// First run: if Accessibility isn't granted, show a window that tracks the permission live
+// (red → green) so the user gets clear confirmation instead of a dead-end instruction.
+Onboarding.shared.showIfNeeded()
+
 FileHandle.standardError.write(
     "Jay ready — double-tap ⌥ (Accessibility trusted: \(trusted))\n"
         .data(using: .utf8)!)

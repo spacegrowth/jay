@@ -135,19 +135,19 @@ enum PluginHost {
 
     // MARK: state (enable/disable + latency) — persisted so the Preferences tab reflects it
 
-    // OPT-IN by design: a plugin runs only if the user has explicitly enabled it. A just-installed /
-    // dropped-in plugin is OFF until the user turns it on in Preferences ▸ Plugins — so nothing
-    // arbitrary auto-runs with the app's Accessibility/Automation grants.
-    private static let kEnabled = "pluginsEnabled"
+    // ON by default: an installed plugin works out of the box. We track the DISABLED set instead,
+    // so a plugin runs unless the user explicitly turns it off in Preferences ▸ Plugins. (Plugins
+    // only ever live in a folder the user controls, so presence already implies intent.)
+    private static let kDisabled = "pluginsDisabled"
     private static let kLatency = "pluginLatency"
 
     static func isEnabled(_ id: String) -> Bool {
-        (UserDefaults.standard.stringArray(forKey: kEnabled) ?? []).contains(id)
+        !(UserDefaults.standard.stringArray(forKey: kDisabled) ?? []).contains(id)
     }
     static func setEnabled(_ id: String, _ enabled: Bool) {
-        var s = Set(UserDefaults.standard.stringArray(forKey: kEnabled) ?? [])
-        if enabled { s.insert(id) } else { s.remove(id) }
-        UserDefaults.standard.set(Array(s), forKey: kEnabled)
+        var s = Set(UserDefaults.standard.stringArray(forKey: kDisabled) ?? [])
+        if enabled { s.remove(id) } else { s.insert(id) }
+        UserDefaults.standard.set(Array(s), forKey: kDisabled)
     }
     static func lastLatencyMs(_ id: String) -> Double? {
         (UserDefaults.standard.dictionary(forKey: kLatency) as? [String: Double])?[id]

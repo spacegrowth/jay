@@ -15,7 +15,7 @@ cp AppIcon.icns menubar-glyph.png "$APP/Contents/Resources/"   # Finder/About ic
 # Hard-to-script apps (some Electron and native targets) are external plugins now — the app ships zero CDP/debug code.
 swiftc -swift-version 5 Adapters.swift PluginHost.swift EdgeTrigger.swift UsageLog.swift \
   ContextKey.swift ContextEngine.swift ContextOverrides.swift ContextLabeler.swift ContextLabelerAI.swift ContextStore.swift \
-  SwitcherPanel.swift Trigger.swift Settings.swift main.swift \
+  SwitcherPanel.swift Trigger.swift Settings.swift Onboarding.swift main.swift \
   -o "$APP/Contents/MacOS/Jay"
 
 codesign --force --sign "$IDENTITY" "$APP"
