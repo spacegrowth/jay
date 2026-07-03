@@ -1,0 +1,6 @@
+{
+  "apiVersion": 1,
+  "name": "Terminal",
+  "targetApp": "Terminal",
+  "exec": "adapter"
+}

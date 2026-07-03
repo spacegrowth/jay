@@ -1,0 +1,7 @@
+{
+  "apiVersion": 1,
+  "name": "VS Code",
+  "targetApp": "Code",
+  "exec": "adapter",
+  "supportsClose": true
+}

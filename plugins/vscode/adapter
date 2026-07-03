@@ -1,0 +1,41 @@
+#!/bin/bash
+# Jay plugin — VS Code open tabs, via the companion "Jay Bridge" extension
+# (extension/). The extension publishes tabs to vscode-<pid>.json files (one per window); this merges
+# them for `list`, and `activate` drops a request the extension picks up. No debug port, no relaunch.
+#
+# Requires the extension installed in VS Code (see extension/README.md). Covers Cursor with the same
+# extension (change targetApp/`open -a` to "Cursor").
+
+DIR="$HOME/Library/Application Support/Jay"
+
+case "$1" in
+  list)
+    shopt -s nullglob
+    files=("$DIR"/vscode-*.json)                    # one file per VS Code window
+    case ${#files[@]} in
+      0) echo "[]" ;;
+      1) cat "${files[0]}" ;;                        # single window (common) → fast path, no python spawn
+      *) python3 - "${files[@]}" <<'PY'              # multiple windows → merge + dedup by id
+import json, sys
+out = []; seen = set()
+for f in sys.argv[1:]:
+    try:
+        for t in json.load(open(f)):
+            k = t.get("id")
+            if k and k not in seen:
+                seen.add(k); out.append(t)
+    except Exception:
+        pass
+print(json.dumps(out))
+PY
+      ;;
+    esac
+    ;;
+  activate)
+    printf '%s' "$2" > "$DIR/vscode-activate.txt"   # extension watches this, opens+focuses the tab
+    open -a "Visual Studio Code"                    # bring the app forward
+    ;;
+  close)
+    printf '%s' "$2" > "$DIR/vscode-close.txt"      # extension watches this, closes the tab (no focus-steal)
+    ;;
+esac

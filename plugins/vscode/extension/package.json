@@ -1,0 +1,11 @@
+{
+  "name": "jay-bridge",
+  "displayName": "Jay Bridge",
+  "description": "Exposes open editor tabs to the Jay app (no debug port needed).",
+  "version": "0.1.0",
+  "publisher": "jay",
+  "engines": { "vscode": "^1.70.0" },
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {}
+}

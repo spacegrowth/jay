@@ -1,0 +1,6 @@
+# Build output
+app/*.app/
+app/*.dSYM/
+app/*.o
+*.log
+.DS_Store

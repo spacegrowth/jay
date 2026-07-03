@@ -1,0 +1,52 @@
+#!/bin/bash
+# Jay plugin — Apple Terminal tabs (Terminal.app; the built-in adapter only covers iTerm2).
+#
+# Protocol (plugin contract v1):
+#   ./adapter list           -> JSON [{ "id", "title", "subtitle", "active" }]  (id = the tab's tty)
+#   ./adapter activate <id>  -> select the tab whose tty == <id> and bring Terminal forward
+#
+# id is the tty (e.g. /dev/ttys014) — stable across tab reordering, so activate resolves correctly.
+
+case "$1" in
+  list)
+    osascript -l JavaScript <<'JS'
+const T = Application("Terminal");
+if (!T.running()) { "[]" } else {
+  const out = [];
+  T.windows().forEach((w) => {
+    let tabs; try { tabs = w.tabs(); } catch (e) { return; }
+    tabs.forEach((t) => {
+      let title = ""; try { title = t.customTitle(); } catch (e) {}
+      if (!title || title === "Terminal") {                     // default title → use the running process
+        let procs = []; try { procs = t.processes(); } catch (e) {}
+        title = procs.length ? String(procs[procs.length - 1]).replace(/^-/, "") : "";
+      }
+      let tty = ""; try { tty = t.tty(); } catch (e) {}
+      if (!tty) return;
+      let active = false; try { active = t.selected(); } catch (e) {}
+      out.push({ id: tty, title: title || tty, subtitle: tty, active: active });
+    });
+  });
+  JSON.stringify(out);
+}
+JS
+    ;;
+  activate)
+    # Pass the tty as an argv arg (read via run(argv)) rather than string-splicing it into the
+    # script — so the id can never break out of the JS literal, even if its source ever changes.
+    osascript -l JavaScript - "$2" >/dev/null 2>&1 <<'JS'
+function run(argv) {
+  const tty = argv[0];
+  const T = Application('Terminal');
+  T.windows().forEach((w) => {
+    let ts; try { ts = w.tabs(); } catch (e) { return; }
+    ts.forEach((t) => {
+      let x = ''; try { x = t.tty(); } catch (e) {}
+      if (x === tty) { try { t.selected = true; } catch (e) {} try { w.frontmost = true; } catch (e) {} }
+    });
+  });
+  T.activate();
+}
+JS
+    ;;
+esac
