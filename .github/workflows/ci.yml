@@ -1,0 +1,25 @@
+name: CI
+
+# Build the app and run the logic tests on every push and pull request.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build the app (compile + ad-hoc sign)
+        run: cd app && ./build.sh
+
+      - name: Run logic tests (Contexts + PluginHost)
+        run: cd app && ./run-tests.sh
