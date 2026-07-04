@@ -374,12 +374,15 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         let head2 = sectionLabel("Plugins folder")
         pluginsBody.addArrangedSubview(head2)
         let path = detail(PluginHost.root.path)
-        let reveal = NSButton(title: "Reveal in Finder", target: self, action: #selector(revealPluginsFolder)); reveal.bezelStyle = .rounded
-        let rescan = NSButton(title: "Rescan", target: self, action: #selector(rescanPlugins)); rescan.bezelStyle = .rounded
+        let add = NSButton(title: "Add plugin…", target: self, action: #selector(addPlugin)); add.bezelStyle = .rounded
+        add.toolTip = "Point Jay at a plugin folder anywhere on your Mac — it's loaded in place, not copied"
         let docs = NSButton(title: "Write a plugin →", target: self, action: #selector(openPluginDocs)); docs.bezelStyle = .rounded
         docs.toolTip = "Open the plugin docs (manifest + list/activate/close) and a copyable example"
-        let acts = NSStackView(views: [reveal, rescan, docs]); acts.orientation = .horizontal; acts.spacing = 8; acts.alignment = .centerY
-        pluginsBody.addArrangedSubview(card([path, acts]))
+        let reveal = NSButton(title: "Reveal in Finder", target: self, action: #selector(revealPluginsFolder)); reveal.bezelStyle = .rounded
+        let rescan = NSButton(title: "Rescan", target: self, action: #selector(rescanPlugins)); rescan.bezelStyle = .rounded
+        let row1 = NSStackView(views: [add, docs]);     row1.orientation = .horizontal; row1.spacing = 8; row1.alignment = .centerY
+        let row2 = NSStackView(views: [reveal, rescan]); row2.orientation = .horizontal; row2.spacing = 8; row2.alignment = .centerY
+        pluginsBody.addArrangedSubview(card([path, row1, row2]))
         pluginsBody.setCustomSpacing(7, after: head2)
 
         refit(pluginsVC)
@@ -401,7 +404,8 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
 
         let name = NSTextField(labelWithString: s.name)
         name.font = .systemFont(ofSize: 13, weight: .semibold)
-        let subText = [s.targetApp.map { "→ \($0)" }, statusText].compactMap { $0 }.joined(separator: "   ")
+        let srcTag: String? = s.source == .builtIn ? "Built-in" : (s.source == .added ? "Added" : nil)
+        let subText = [srcTag, s.targetApp.map { "→ \($0)" }, statusText].compactMap { $0 }.joined(separator: "   ")
         let sub = NSTextField(labelWithString: subText)
         sub.font = .systemFont(ofSize: 11); sub.textColor = .secondaryLabelColor
         let namecol = NSStackView(views: [name, sub]); namecol.orientation = .vertical; namecol.alignment = .leading; namecol.spacing = 1
@@ -418,8 +422,19 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         sw.target = self; sw.action = #selector(togglePlugin(_:))
         sw.identifier = NSUserInterfaceItemIdentifier(s.id)
 
-        let spacer = NSView(); spacer.setContentHuggingPriority(.init(1), for: .horizontal)   // takes the slack → dot+name pinned left, Test+switch pinned right (consistent across rows)
-        let row = NSStackView(views: [dot, namecol, spacer, test, sw])
+        let spacer = NSView(); spacer.setContentHuggingPriority(.init(1), for: .horizontal)   // takes the slack → dot+name pinned left, controls pinned right (consistent across rows)
+        var views: [NSView] = [dot, namecol, spacer]
+        if s.source == .added {                                    // added plugins can be forgotten (never deletes files)
+            let remove = NSButton(); remove.isBordered = false
+            remove.image = NSImage(systemSymbolName: "minus.circle", accessibilityDescription: "Remove")
+            remove.contentTintColor = .secondaryLabelColor
+            remove.target = self; remove.action = #selector(removePlugin(_:))
+            remove.identifier = NSUserInterfaceItemIdentifier(s.id)
+            remove.toolTip = "Remove this added plugin (doesn't delete your files)"
+            views.append(remove)
+        }
+        views += [test, sw]
+        let row = NSStackView(views: views)
         row.orientation = .horizontal; row.spacing = 8; row.alignment = .centerY
         return row
     }
@@ -446,6 +461,31 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         NSWorkspace.shared.activateFileViewerSelecting([PluginHost.root])
     }
     @objc private func rescanPlugins() { refreshPluginsPane() }
+
+    /// Point Jay at a plugin folder anywhere on disk (loaded in place, not copied).
+    @objc private func addPlugin() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false
+        panel.prompt = "Add Plugin"
+        panel.message = "Choose a plugin folder — it must contain a plugin.json and its executable."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if PluginHost.addExternalPlugin(url) {
+            refreshPluginsPane()
+        } else {
+            let a = NSAlert()
+            a.messageText = "That folder isn't a valid plugin"
+            a.informativeText = "It needs a plugin.json (apiVersion 1) and an executable named by its \"exec\" field."
+            a.runModal()
+        }
+    }
+
+    /// Forget an added plugin — removes the reference only, never the user's files.
+    @objc private func removePlugin(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue else { return }
+        PluginHost.removeExternalPlugin(id: id)
+        refreshPluginsPane()
+    }
+
     @objc private func openPluginDocs() {
         if let url = URL(string: "https://github.com/spacegrowth/jay/blob/main/plugins/README.md") {
             NSWorkspace.shared.open(url)
