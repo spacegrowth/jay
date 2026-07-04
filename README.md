@@ -3,7 +3,7 @@
 <p align="center"><b>Summon everything, jump anywhere.</b></p>
 <p align="center">
   <a href="https://spacegrowth.github.io/jay/"><b>Website</b></a> &nbsp;·&nbsp;
-  <a href="https://spacegrowth.github.io/jay/releases/latest/download/Jay-Installer.pkg"><b>Download for macOS</b></a>
+  <a href="https://github.com/spacegrowth/jay/releases/latest/download/Jay-Installer.pkg"><b>Download for macOS</b></a>
 </p>
 
 ![Jay — a command palette listing Contexts and open apps across the Mac](docs/hero.png)
