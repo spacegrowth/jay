@@ -1,0 +1,7 @@
+#!/bin/bash
+# Runs as root before the payload is laid down. Quit any running Jay and remove the old bundle so
+# every install is a clean replace — no stale files carried across versions, no "app is in use".
+pkill -f "/Applications/Jay.app/Contents/MacOS/Jay" 2>/dev/null || true
+sleep 1
+rm -rf "/Applications/Jay.app" 2>/dev/null || true
+exit 0
