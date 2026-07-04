@@ -15,7 +15,10 @@ final class Onboarding: NSObject {
     private var granted = false
 
     /// Show only when Accessibility isn't granted yet (called on launch).
-    func showIfNeeded() { if !AXIsProcessTrusted() { show() } }
+    func showIfNeeded() {
+        // Show on first run (to offer plugins) or whenever Accessibility still isn't granted.
+        if !AXIsProcessTrusted() || !UserDefaults.standard.bool(forKey: "onboardingDone") { show() }
+    }
 
     func show() {
         if let w = window { NSApp.activate(ignoringOtherApps: true); w.makeKeyAndOrderFront(nil); return }
@@ -40,10 +43,17 @@ final class Onboarding: NSObject {
         actionButton.target = self
         actionButton.action = #selector(primaryTapped)
 
-        let stack = NSStackView(views: [heading, blurb, statusRow, actionButton])
+        // Built-in plugins are bundled + off by default — offer them here so the user turns on
+        // the ones they use (the guided "want to enable this?" step the installer can't do).
+        let builtIns = (PluginHost.builtInRoot.map { PluginHost.discover(in: $0, source: .builtIn) } ?? [])
+            .sorted { $0.manifest.name < $1.manifest.name }
+        let plugins = pluginChecklist(builtIns)
+
+        let stack = NSStackView(views: [heading, blurb, statusRow, plugins, actionButton])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.setCustomSpacing(20, after: blurb)
+        stack.setCustomSpacing(20, after: plugins)
 
         let root = NSView()
         root.addSubview(stack)
@@ -54,7 +64,7 @@ final class Onboarding: NSObject {
             stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -26),
         ])
 
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 280),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 300 + CGFloat(builtIns.count) * 46),
                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "Welcome to Jay"
         w.contentView = root
@@ -88,7 +98,49 @@ final class Onboarding: NSObject {
     }
 
     private func finish() {
+        UserDefaults.standard.set(true, forKey: "onboardingDone")   // don't re-prompt for plugins next launch
         timer?.invalidate(); timer = nil
         window?.close(); window = nil
+    }
+
+    // ── first-run plugins checklist ──
+
+    /// A "turn on the plugins you use" section listing each bundled built-in with a toggle.
+    /// Empty (zero height) if no built-ins are bundled.
+    private func pluginChecklist(_ builtIns: [LoadedPlugin]) -> NSView {
+        let container = NSStackView()
+        container.orientation = .vertical; container.alignment = .leading; container.spacing = 8
+        guard !builtIns.isEmpty else { return container }
+        let title = NSTextField(labelWithString: "Turn on the plugins you use")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        container.addArrangedSubview(title)
+        for p in builtIns { container.addArrangedSubview(pluginToggleRow(p)) }
+        return container
+    }
+
+    private func pluginToggleRow(_ p: LoadedPlugin) -> NSView {
+        let name = NSTextField(labelWithString: p.manifest.name); name.font = .systemFont(ofSize: 13)
+        let hint = NSTextField(labelWithString: pluginHint(p)); hint.font = .systemFont(ofSize: 11); hint.textColor = .secondaryLabelColor
+        let col = NSStackView(views: [name, hint]); col.orientation = .vertical; col.alignment = .leading; col.spacing = 1
+        col.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let sw = NSSwitch(); sw.state = PluginHost.isEnabled(p) ? .on : .off
+        sw.target = self; sw.action = #selector(togglePlugin(_:)); sw.identifier = NSUserInterfaceItemIdentifier(p.id)
+        let spacer = NSView(); spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        let row = NSStackView(views: [col, spacer, sw]); row.orientation = .horizontal; row.spacing = 10; row.alignment = .centerY
+        row.widthAnchor.constraint(equalToConstant: 384).isActive = true   // fill the window's content width
+        return row
+    }
+
+    private func pluginHint(_ p: LoadedPlugin) -> String {
+        switch p.manifest.name {
+        case "Terminal": return "Apple Terminal tabs · asks for Automation the first time"
+        case "VS Code":  return "Editor tabs · also needs the bridge extension in VS Code"
+        default:         return p.manifest.targetApp.map { "\($0) items" } ?? "Adds \(p.manifest.name)"
+        }
+    }
+
+    @objc private func togglePlugin(_ sender: NSSwitch) {
+        guard let id = sender.identifier?.rawValue else { return }
+        PluginHost.setEnabled(id, source: .builtIn, sender.state == .on)
     }
 }
