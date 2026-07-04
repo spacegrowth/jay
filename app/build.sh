@@ -5,7 +5,8 @@ set -e
 cd "$(dirname "$0")"
 
 APP="Jay.app"
-IDENTITY="-"   # ad-hoc sign; set your own Developer ID for a notarized release
+IDENTITY="${JAY_IDENTITY:--}"   # ad-hoc by default; `export JAY_IDENTITY=<signing identity>` for a stable
+                                # local build whose Accessibility/Automation grants survive rebuilds
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
