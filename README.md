@@ -5,6 +5,9 @@
   <a href="https://spacegrowth.github.io/jay/"><b>Website</b></a> &nbsp;·&nbsp;
   <a href="https://github.com/spacegrowth/jay/releases/latest/download/Jay-Installer.pkg"><b>Download for macOS</b></a>
 </p>
+<p align="center">
+  <a href="https://github.com/spacegrowth/jay/actions/workflows/ci.yml"><img src="https://github.com/spacegrowth/jay/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
 ![Jay — a command palette listing Contexts and open apps across the Mac](docs/hero.png)
 
