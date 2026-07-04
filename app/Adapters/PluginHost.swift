@@ -28,9 +28,14 @@ struct PluginManifest: Decodable {
     let supportsClose: Bool?  // plugin handles `exec close <id>` → items get a hover-× (e.g. VS Code)
 }
 
+/// Where a plugin came from: bundled in the app, dropped into the support dir, or a folder the
+/// user pointed Jay at. Drives the default enabled state and the Preferences label.
+enum PluginSource { case builtIn, dropIn, added }
+
 struct LoadedPlugin {
     let manifest: PluginManifest
     let dir: URL
+    let source: PluginSource
     var id: String { dir.lastPathComponent }     // stable identity = folder name (unique on disk)
     var execURL: URL { dir.appendingPathComponent(manifest.exec) }
 }
@@ -41,6 +46,7 @@ struct PluginStatus {
     let name: String
     let targetApp: String?
     let enabled: Bool
+    let source: PluginSource
     let lastMs: Double?          // last measured `list` latency; nil = never run, <0 = timed out/failed
 }
 
@@ -50,24 +56,60 @@ enum PluginHost {
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Jay/Plugins", isDirectory: true)
 
-    /// Discover valid plugins: each is a subdirectory with a parseable `plugin.json` (matching this
-    /// API version) whose `exec` is an executable file. Invalid/foreign-version plugins are skipped.
-    static func discover(in root: URL = PluginHost.root) -> [LoadedPlugin] {
-        let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else {
-            return []   // no plugins dir yet → no plugins (normal)
+    /// Built-in plugins ship inside the app bundle (Contents/Resources/Plugins).
+    static var builtInRoot: URL? { Bundle.main.resourceURL?.appendingPathComponent("Plugins", isDirectory: true) }
+
+    /// Load one plugin folder if it's valid: a parseable `plugin.json` (matching this API version)
+    /// whose `exec` is an executable file. Returns nil for anything invalid or a foreign version.
+    static func loadPlugin(at dir: URL, source: PluginSource) -> LoadedPlugin? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("plugin.json")),
+              let m = try? JSONDecoder().decode(PluginManifest.self, from: data),
+              m.apiVersion == kPluginAPIVersion else { return nil }
+        let p = LoadedPlugin(manifest: m, dir: dir, source: source)
+        return FileManager.default.isExecutableFile(atPath: p.execURL.path) ? p : nil
+    }
+
+    /// Discover valid plugins inside a parent directory (each plugin is a subfolder).
+    static func discover(in root: URL = PluginHost.root, source: PluginSource = .dropIn) -> [LoadedPlugin] {
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            return []   // no such dir → no plugins (normal)
         }
-        var out: [LoadedPlugin] = []
-        for dir in entries {
-            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
-            let manifestURL = dir.appendingPathComponent("plugin.json")
-            guard let data = try? Data(contentsOf: manifestURL),
-                  let m = try? JSONDecoder().decode(PluginManifest.self, from: data),
-                  m.apiVersion == kPluginAPIVersion else { continue }
-            let p = LoadedPlugin(manifest: m, dir: dir)
-            if fm.isExecutableFile(atPath: p.execURL.path) { out.append(p) }
+        return entries.compactMap { dir in
+            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { return nil }
+            return loadPlugin(at: dir, source: source)
         }
+    }
+
+    /// Every plugin across the three sources — app bundle (built-in), the support-dir Plugins folder
+    /// (drop-in), and the user's added folders — deduped by id (added/drop-in override a built-in).
+    static func discoverAll() -> [LoadedPlugin] {
+        var out: [LoadedPlugin] = []; var seen = Set<String>()
+        func add(_ ps: [LoadedPlugin]) { for p in ps where seen.insert(p.id).inserted { out.append(p) } }
+        add(addedPaths().compactMap { loadPlugin(at: $0, source: .added) })   // user-pointed folders win
+        add(discover(in: root, source: .dropIn))
+        if let b = builtInRoot { add(discover(in: b, source: .builtIn)) }
         return out
+    }
+
+    // ── user-added plugin folders: pointed at wherever they live, loaded in place ──
+    private static let kExtraPaths = "pluginPaths"
+    static func addedPaths() -> [URL] {
+        (UserDefaults.standard.stringArray(forKey: kExtraPaths) ?? []).map { URL(fileURLWithPath: $0) }
+    }
+    /// Point Jay at a plugin folder wherever it lives. Returns false if it isn't a valid plugin.
+    @discardableResult
+    static func addExternalPlugin(_ url: URL) -> Bool {
+        guard loadPlugin(at: url, source: .added) != nil else { return false }
+        let path = url.standardizedFileURL.path
+        var paths = UserDefaults.standard.stringArray(forKey: kExtraPaths) ?? []
+        if !paths.contains(path) { paths.append(path); UserDefaults.standard.set(paths, forKey: kExtraPaths) }
+        return true
+    }
+    /// Forget an added plugin (never touches the user's files).
+    static func removeExternalPlugin(id: String) {
+        let paths = (UserDefaults.standard.stringArray(forKey: kExtraPaths) ?? [])
+            .filter { URL(fileURLWithPath: $0).lastPathComponent != id }
+        UserDefaults.standard.set(paths, forKey: kExtraPaths)
     }
 
     /// Run a plugin subcommand, capture stdout, enforce a timeout. Returns nil on launch failure,
@@ -98,11 +140,10 @@ enum PluginHost {
     /// only drops itself (total wall-clock ≈ one deadline, not the sum). Skips disabled plugins and
     /// those whose `targetApp` isn't running. Records each plugin's measured latency for the
     /// Preferences ▸ Plugins tab. `flag-only`: slow plugins are recorded/flagged, never auto-disabled.
-    static func listAll(in root: URL = PluginHost.root,
-                        deadline: TimeInterval = 0.3,
+    static func listAll(deadline: TimeInterval = 0.3,
                         isRunning: (String) -> Bool) -> [(plugin: LoadedPlugin, items: [PluginItem])] {
-        let eligible = discover(in: root).filter { p in
-            if !isEnabled(p.id) { return false }                       // opt-in: skip until user enables
+        let eligible = discoverAll().filter { p in
+            if !isEnabled(p) { return false }                          // built-in: opt-in; drop-in/added: on by default
             if let target = p.manifest.targetApp, !isRunning(target) { return false }
             return true
         }
@@ -135,19 +176,30 @@ enum PluginHost {
 
     // MARK: state (enable/disable + latency) — persisted so the Preferences tab reflects it
 
-    // ON by default: an installed plugin works out of the box. We track the DISABLED set instead,
-    // so a plugin runs unless the user explicitly turns it off in Preferences ▸ Plugins. (Plugins
-    // only ever live in a folder the user controls, so presence already implies intent.)
-    private static let kDisabled = "pluginsDisabled"
-    private static let kLatency = "pluginLatency"
+    // Enable defaults depend on the source. Built-in plugins are bundled with the app, so presence
+    // isn't intent — they're OFF until the user turns them on (first-run checklist or Preferences),
+    // tracked as an ENABLED set. Drop-in and user-added plugins are put there deliberately, so
+    // they're ON by default, tracked as a DISABLED set.
+    private static let kEnabled  = "pluginsEnabled"    // built-in ids the user turned ON
+    private static let kDisabled = "pluginsDisabled"   // drop-in/added ids the user turned OFF
+    private static let kLatency  = "pluginLatency"
 
-    static func isEnabled(_ id: String) -> Bool {
-        !(UserDefaults.standard.stringArray(forKey: kDisabled) ?? []).contains(id)
+    static func isEnabled(_ id: String, source: PluginSource) -> Bool {
+        if source == .builtIn { return (UserDefaults.standard.stringArray(forKey: kEnabled) ?? []).contains(id) }
+        return !(UserDefaults.standard.stringArray(forKey: kDisabled) ?? []).contains(id)
     }
-    static func setEnabled(_ id: String, _ enabled: Bool) {
-        var s = Set(UserDefaults.standard.stringArray(forKey: kDisabled) ?? [])
-        if enabled { s.remove(id) } else { s.insert(id) }
-        UserDefaults.standard.set(Array(s), forKey: kDisabled)
+    static func isEnabled(_ p: LoadedPlugin) -> Bool { isEnabled(p.id, source: p.source) }
+
+    static func setEnabled(_ id: String, source: PluginSource, _ on: Bool) {
+        let key  = source == .builtIn ? kEnabled : kDisabled
+        let want = source == .builtIn ? on : !on          // built-in set holds ENABLED ids; other set holds DISABLED ids
+        var s = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        if want { s.insert(id) } else { s.remove(id) }
+        UserDefaults.standard.set(Array(s), forKey: key)
+    }
+    /// Convenience for callers that only have an id (e.g. a Preferences toggle) — resolves the source.
+    static func setEnabled(_ id: String, _ on: Bool) {
+        setEnabled(id, source: discoverAll().first { $0.id == id }?.source ?? .dropIn, on)
     }
     static func lastLatencyMs(_ id: String) -> Double? {
         (UserDefaults.standard.dictionary(forKey: kLatency) as? [String: Double])?[id]
@@ -161,8 +213,8 @@ enum PluginHost {
     /// On-demand probe (the Preferences "Test" button): run one `list` with a generous timeout,
     /// record the latency, and report how long it took + how many items it returned (-1 = failed).
     @discardableResult
-    static func probe(id: String, in root: URL = PluginHost.root) -> (ms: Double, items: Int)? {
-        guard let p = discover(in: root).first(where: { $0.id == id }) else { return nil }
+    static func probe(id: String) -> (ms: Double, items: Int)? {
+        guard let p = discoverAll().first(where: { $0.id == id }) else { return nil }
         let start = Date()
         let data = run(p, ["list"], timeout: 2.0)
         let ms = data == nil ? -1 : Date().timeIntervalSince(start) * 1000
@@ -172,10 +224,10 @@ enum PluginHost {
     }
 
     /// Everything installed + its state — for the Preferences ▸ Plugins list.
-    static func statuses(in root: URL = PluginHost.root) -> [PluginStatus] {
-        discover(in: root).map { p in
+    static func statuses() -> [PluginStatus] {
+        discoverAll().map { p in
             PluginStatus(id: p.id, name: p.manifest.name, targetApp: p.manifest.targetApp,
-                         enabled: isEnabled(p.id), lastMs: lastLatencyMs(p.id))
+                         enabled: isEnabled(p), source: p.source, lastMs: lastLatencyMs(p.id))
         }
     }
 }

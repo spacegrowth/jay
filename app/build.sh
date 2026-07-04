@@ -12,6 +12,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
 cp AppIcon.icns menubar-glyph.png "$APP/Contents/Resources/"   # Finder/About icon + menu-bar template glyph
 
+# Bundle the built-in plugins inside the app (Resources/Plugins). They travel with the app and are
+# OFF by default — the user enables the ones they want (first-run checklist / Preferences ▸ Plugins).
+mkdir -p "$APP/Contents/Resources/Plugins"
+for p in terminal vscode; do
+  [ -d "../plugins/$p" ] && cp -R "../plugins/$p" "$APP/Contents/Resources/Plugins/$p"
+done
+
 # Source is grouped by concern: Core/ Contexts/ Adapters/ Triggers/ UI/. Tests/ is the standalone
 # logic-test target (not part of the app). One swiftc invocation compiles them all together.
 SRC=$(find Core Contexts Adapters Triggers UI -name '*.swift' | sort)

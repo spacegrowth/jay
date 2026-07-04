@@ -42,17 +42,51 @@ private func testManifestDecoding() {
     } catch { failures += 1; print("  ✗ manifest decode threw \(error)") }
 }
 
-// ── Enable semantics: ON by default, tracked as a DISABLED set ──
+// ── Enable semantics: built-in OFF by default, drop-in/added ON by default ──
 private func testEnableSemantics() {
-    print("Plugin enable (on by default):")
+    print("Plugin enable (source-aware defaults):")
     UserDefaults.standard.removeObject(forKey: "pluginsDisabled")
-    expect(PluginHost.isEnabled("fresh"), "a never-touched plugin is enabled by default")
-    PluginHost.setEnabled("fresh", false)
-    expect(!PluginHost.isEnabled("fresh"), "disabled after setEnabled(false)")
-    expect(PluginHost.isEnabled("other"), "disabling one doesn't disable another")
-    PluginHost.setEnabled("fresh", true)
-    expect(PluginHost.isEnabled("fresh"), "re-enabled after setEnabled(true)")
+    UserDefaults.standard.removeObject(forKey: "pluginsEnabled")
+    // drop-in / added → ON by default (put there deliberately)
+    expect(PluginHost.isEnabled("dropin", source: .dropIn), "drop-in plugin is on by default")
+    expect(PluginHost.isEnabled("added", source: .added), "added plugin is on by default")
+    PluginHost.setEnabled("dropin", source: .dropIn, false)
+    expect(!PluginHost.isEnabled("dropin", source: .dropIn), "drop-in off after setEnabled(false)")
+    expect(PluginHost.isEnabled("other", source: .dropIn), "disabling one doesn't affect another")
+    PluginHost.setEnabled("dropin", source: .dropIn, true)
+    expect(PluginHost.isEnabled("dropin", source: .dropIn), "drop-in on again")
+    // built-in → OFF by default (bundled; opt-in)
+    expect(!PluginHost.isEnabled("term", source: .builtIn), "built-in plugin is off by default")
+    PluginHost.setEnabled("term", source: .builtIn, true)
+    expect(PluginHost.isEnabled("term", source: .builtIn), "built-in on after enabling")
+    PluginHost.setEnabled("term", source: .builtIn, false)
+    expect(!PluginHost.isEnabled("term", source: .builtIn), "built-in off again")
     UserDefaults.standard.removeObject(forKey: "pluginsDisabled")
+    UserDefaults.standard.removeObject(forKey: "pluginsEnabled")
+}
+
+// ── Add / remove external plugin paths (point-in-place) ──
+private func testExternalPaths() {
+    print("Add / remove external plugin paths:")
+    UserDefaults.standard.removeObject(forKey: "pluginPaths")
+    let baseTmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("jay-ext-\(UUID().uuidString)")
+    let good = baseTmp.appendingPathComponent("mytool")
+    try? FileManager.default.createDirectory(at: good, withIntermediateDirectories: true)
+    try? #"{"apiVersion":1,"name":"MyTool","exec":"adapter"}"#.write(to: good.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
+    let adapter = good.appendingPathComponent("adapter")
+    try? "#!/bin/bash\necho '[]'".write(to: adapter, atomically: true, encoding: .utf8)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: adapter.path)
+    let bad = baseTmp.appendingPathComponent("empty")
+    try? FileManager.default.createDirectory(at: bad, withIntermediateDirectories: true)
+    expect(PluginHost.addExternalPlugin(bad) == false, "folder without a valid plugin.json is rejected")
+    expect(PluginHost.addExternalPlugin(good) == true, "valid plugin folder is accepted")
+    expect(PluginHost.addedPaths().contains { $0.lastPathComponent == "mytool" }, "added path is remembered")
+    expect(PluginHost.loadPlugin(at: good, source: .added)?.source == .added, "loaded in place, marked .added")
+    PluginHost.removeExternalPlugin(id: "mytool")
+    expect(!PluginHost.addedPaths().contains { $0.lastPathComponent == "mytool" }, "removed from addedPaths")
+    expect(FileManager.default.fileExists(atPath: good.path), "remove does NOT delete the user's files")
+    UserDefaults.standard.removeObject(forKey: "pluginPaths")
+    try? FileManager.default.removeItem(at: baseTmp)
 }
 
 // ── discover(): finds a valid plugin dir, skips invalid ones ──
@@ -76,6 +110,7 @@ private func testDiscovery() {
     eq(found.count, 1, "only the valid plugin is discovered")
     expect(found.first?.manifest.name == "Good", "discovers the valid plugin by manifest")
     expect(found.first?.id == "good", "plugin id is its folder name")
+    expect(found.first?.source == .dropIn, "discovered plugin carries its source")
     expect(PluginHost.discover(in: base.appendingPathComponent("nope")).isEmpty, "missing plugins dir → empty, no crash")
     try? FileManager.default.removeItem(at: base)
 }
@@ -85,6 +120,7 @@ private func testDiscovery() {
         testItemDecoding()
         testManifestDecoding()
         testEnableSemantics()
+        testExternalPaths()
         testDiscovery()
         print(failures == 0 ? "\n✅ all \(checks) checks passed" : "\n❌ \(failures)/\(checks) checks FAILED")
         exit(failures == 0 ? 0 : 1)
