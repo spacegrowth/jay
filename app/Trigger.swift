@@ -84,8 +84,20 @@ final class HoldCommand {
 
     private let allMods: [CGEventFlags] = [.maskCommand, .maskAlternate, .maskShift, .maskControl, .maskSecondaryFn]
 
+    private var retry: Timer?
+
     init(action: @escaping () -> Void) {
         self.action = action
+        arm()
+    }
+
+    /// Create the listen-only tap. macOS only permits a session event tap once Accessibility is
+    /// granted, so if it fails (Jay launched before the user allowed it), poll and retry — the
+    /// hotkey self-heals the moment Accessibility is granted, no relaunch needed.
+    /// LISTEN-ONLY: we only observe to detect the double-tap; we never modify or swallow events, so
+    /// the window server can't block input on us even if this process hangs or loses Accessibility.
+    private func arm() {
+        guard tap == nil else { return }
         let mask =
             (1 << CGEventType.flagsChanged.rawValue) |
             (1 << CGEventType.keyDown.rawValue) |
@@ -96,21 +108,26 @@ final class HoldCommand {
             let me = Unmanaged<HoldCommand>.fromOpaque(refcon!).takeUnretainedValue()
             return me.handle(type, event)
         }
-        // LISTEN-ONLY: we only observe to detect the double-tap; we never modify or
-        // swallow events. A passive tap is delivered event copies asynchronously, so
-        // the window server never blocks input on us — it physically cannot freeze
-        // the keyboard/mouse even if this process hangs or loses Accessibility.
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
             eventsOfInterest: CGEventMask(mask), callback: cb,
             userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
-                FileHandle.standardError.write("HoldCommand: tapCreate FAILED\n".data(using: .utf8)!)
+                scheduleRetry()               // not trusted yet → keep trying until it is
                 return
             }
         self.tap = tap
         let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        retry?.invalidate(); retry = nil
+    }
+
+    private func scheduleRetry() {
+        guard retry == nil else { return }
+        retry = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if AXIsProcessTrusted() { self.arm() }
+        }
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {

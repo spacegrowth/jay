@@ -20,8 +20,18 @@ final class LeftEdgeWatcher {
     private var inZone = false
     private let dwellDelay: CFTimeInterval = 0.18
 
+    private var retry: Timer?
+
     init(action: @escaping (NSScreen) -> Void) {
         self.action = action
+        arm()
+    }
+
+    /// Create the listen-only tap. Only permitted once Accessibility is granted, so if it fails
+    /// (Jay launched before the grant), poll and retry — the edge self-heals when Accessibility is
+    /// granted, no relaunch needed.
+    private func arm() {
+        guard tap == nil else { return }
         let mask = (1 << CGEventType.mouseMoved.rawValue) | (1 << CGEventType.leftMouseDragged.rawValue)
         let cb: CGEventTapCallBack = { _, type, event, refcon in
             let me = Unmanaged<LeftEdgeWatcher>.fromOpaque(refcon!).takeUnretainedValue()
@@ -30,10 +40,19 @@ final class LeftEdgeWatcher {
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
             eventsOfInterest: CGEventMask(mask), callback: cb,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return }
+            userInfo: Unmanaged.passUnretained(self).toOpaque()) else { scheduleRetry(); return }
         self.tap = tap
         CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0), .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        retry?.invalidate(); retry = nil
+    }
+
+    private func scheduleRetry() {
+        guard retry == nil else { return }
+        retry = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if AXIsProcessTrusted() { self.arm() }
+        }
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
