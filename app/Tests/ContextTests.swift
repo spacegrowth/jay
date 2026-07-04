@@ -1,7 +1,7 @@
 import Foundation
 
 // Standalone test runner for the Contexts logic (Foundation-only — no AppKit, no app build).
-// Build + run:  swiftc ContextKey.swift ContextEngine.swift ContextOverrides.swift ContextLabeler.swift ContextStore.swift ContextTests.swift -o /tmp/ctxtests && /tmp/ctxtests
+// Build + run (from app/):  swiftc Contexts/ContextKey.swift Contexts/ContextEngine.swift Contexts/ContextOverrides.swift Contexts/ContextLabeler.swift Contexts/ContextStore.swift Tests/ContextTests.swift -o /tmp/ctxtests && /tmp/ctxtests
 // NOT part of build.sh (app target) — pure logic verification.
 
 private struct Stub: ContextItem { let app: String; let title: String; let url: String?; let cwd: String? }
