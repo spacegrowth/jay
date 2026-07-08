@@ -293,6 +293,8 @@ private enum Row {
     case pickDone                                            // "‹ Done" — leave pick-mode
     case pickItem(TabRef, on: Bool)                          // a togglable item row in pick-mode (on = currently in the context)
     case allApps(Int, expanded: Bool)                        // contexts-first: folded "All Apps ▸ (N)" accordion row
+    case noWindowHeader(count: Int, collapsed: Bool)         // collapsed "Running · no window (N)" accordion header
+    case noWindowApp(String)                                 // a running-but-windowless app (⏎ = bring it forward)
 }
 private enum Mode: Equatable { case apps; case tabs(String); case context(String); case pick(String) }
 
@@ -487,6 +489,8 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
     private var showContexts: Bool { UserDefaults.standard.bool(forKey: "showContexts") }
     private var contextsFirst: Bool { UserDefaults.standard.bool(forKey: "contextsFirst") }  // opt-in: fold apps
     private var appsExpanded = UserDefaults.standard.bool(forKey: "appsExpanded")  // contexts-first: "All Apps" open (persists)
+    private var noWindowApps: [String] = []                                        // running regular apps with no window on any Space
+    private var noWindowExpanded = UserDefaults.standard.bool(forKey: "noWindowExpanded")  // "Running · no window" fold open (persists)
     private var clickAway: Any?
     private var appSwitchObs: Any?       // hide when you ⌘Tab to another app
     private var summonSource = "keyboard"            // usage log: which trigger summoned us
@@ -820,6 +824,12 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
             rows.append(.rule)
         }
         rest.forEach { rows.append(appRow($0)) }
+        // Running-but-windowless apps, folded at the very bottom (collapsed by default). They're in
+        // ⌘-Tab but have nothing open to summon — ⏎ just brings the app forward.
+        if !noWindowApps.isEmpty {
+            rows.append(.noWindowHeader(count: noWindowApps.count, collapsed: !noWindowExpanded))
+            if noWindowExpanded { noWindowApps.forEach { rows.append(.noWindowApp($0)) } }
+        }
     }
 
     private func buildRows() {
@@ -970,11 +980,13 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
         case .newContext, .addTabs, .pickItem: return tabRowH
         case .pickDone: return backH
         case .allApps: return appRowH
+        case .noWindowHeader: return headerH; case .noWindowApp: return tabRowH
         }
     }
     private func selectable(_ r: Row) -> Bool {
         switch r {
-        case .app, .tab, .newTab, .context, .newContext, .addTabs, .pickDone, .pickItem, .allApps: return true
+        case .app, .tab, .newTab, .context, .newContext, .addTabs, .pickDone, .pickItem, .allApps,
+             .noWindowHeader, .noWindowApp, .appHeader: return true
         default: return false
         }
     }
@@ -1161,7 +1173,13 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
     }
     private func refresh(selectFirst: Bool = true) {
         buildRows(); table.reloadData(); resizeToContent()
-        if selectFirst, let f = rows.firstIndex(where: selectable) { selectRow(f) }
+        // Land on the first real item, not the (now-clickable) app header — drilling into an app
+        // should still pre-select its first tab, so ⏎ picks a tab. Header falls back only if nothing else.
+        if selectFirst {
+            let f = rows.firstIndex { if case .appHeader = $0 { return false }; return selectable($0) }
+                 ?? rows.firstIndex(where: selectable)
+            if let f = f { selectRow(f) }
+        }
     }
 
     // MARK: show / hide
@@ -1631,6 +1649,9 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
         let pinnedSet = Set(appPins)
         appOrder = appPins.filter { appOrder.contains($0) }          // pinned, in pin order
                  + appOrder.filter { !pinnedSet.contains($0) }       // then the MRU rest
+        // Running apps with no window anywhere → the collapsed "no window" group. Exclude anything
+        // already shown (has tabs/windows on this Space) so nothing double-lists.
+        noWindowApps = windowlessApps(excluding: Set(appOrder))
     }
     private func togglePin(_ name: String) {
         // newest pin goes to the TOP, so "unpin + re-pin" is how you promote a pin (no drag needed)
@@ -1662,12 +1683,23 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
         case .pickDone:                    return "pickdone"
         case .pickItem(let t, _):          return "pick:\(t.app):\(t.title)"
         case .allApps:                     return "allapps"
+        case .noWindowHeader:              return "nowindowhdr"
+        case .noWindowApp(let n):          return "nowindow:\(n)"
         }
     }
     /// Animate a single-app pin toggle: the "Pinned" header/rule slide in/out and the
     /// toggled app glides to its new slot (the rest reflow automatically).
     private func animateRowChange(from old: [Row], movedApp: String) {
-        let oldKeys = old.map(rowKey), newKeys = rows.map(rowKey)
+        // rowKey isn't unique for structural rows — every `.rule` keys to "rule", and pinning adds a
+        // SECOND rule (+ a "Pinned" header). A Set/Dictionary diff would collapse the duplicate keys
+        // and under-count the inserts, desyncing NSTableView (ghost row + blank gap). Disambiguate
+        // duplicates by occurrence order so the diff is an exact multiset delta; stable rows still
+        // match (a row present in both at the same occurrence keeps its identity), so the glide holds.
+        func uniq(_ keys: [String]) -> [String] {
+            var seen: [String: Int] = [:]
+            return keys.map { k in let n = seen[k, default: 0]; seen[k] = n + 1; return n == 0 ? k : "\(k)#\(n)" }
+        }
+        let oldKeys = uniq(old.map(rowKey)), newKeys = uniq(rows.map(rowKey))
         let oldSet = Set(oldKeys), newSet = Set(newKeys)
         let oldIdx = Dictionary(oldKeys.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
         let newIdx = Dictionary(newKeys.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
@@ -1779,7 +1811,16 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
             UserDefaults.standard.set(appsExpanded, forKey: "appsExpanded")   // sticks across summons
             let sel = table.selectedRow; buildRows(); table.reloadData(); resizeToContent()
             if rows.indices.contains(sel) { selectRow(sel) }
-        case .header, .rule, .appHeader: break
+        case .noWindowHeader:
+            noWindowExpanded.toggle()             // accordion: fold/unfold the "no window" group
+            UserDefaults.standard.set(noWindowExpanded, forKey: "noWindowExpanded")   // sticks across summons
+            let sel = table.selectedRow; buildRows(); table.reloadData(); resizeToContent()
+            if rows.indices.contains(sel) { selectRow(sel) }
+        case .noWindowApp(let name):
+            logPick("app", app: name, index: r); activateApp(name); hide()   // no tabs to drill into → just bring it forward
+        case .appHeader(let app):
+            logPick("app", app: app, index: r); activateApp(app); hide()     // header click → bring the app forward at its active tab
+        case .header, .rule: break
         }
     }
     private func logPick(_ kind: String, app: String, index: Int, key: String? = nil) {
@@ -2099,6 +2140,30 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
             let c = NSTextField(labelWithString: "\(n)")
             c.font = .systemFont(ofSize: 13, weight: .medium); c.textColor = .tertiaryLabelColor
             c.alignment = .right; c.frame = NSRect(x: W - 64, y: 13, width: 42, height: 17); cell.addSubview(c)  // ~22px off the edge
+        case .noWindowHeader(let n, let collapsed):
+            let chev = NSImageView(frame: NSRect(x: 16, y: 5, width: 14, height: 14))
+            chev.image = NSImage(systemSymbolName: collapsed ? "chevron.right" : "chevron.down", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
+            chev.contentTintColor = .tertiaryLabelColor; chev.imageScaling = .scaleProportionallyDown; cell.addSubview(chev)
+            let gi = NSImageView(frame: NSRect(x: 34, y: 4, width: 16, height: 16))
+            gi.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: "no window")?
+                .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+            gi.contentTintColor = .tertiaryLabelColor; gi.imageScaling = .scaleProportionallyDown; cell.addSubview(gi)
+            let lbl = NSTextField(labelWithString: "No window")
+            lbl.font = .systemFont(ofSize: 12, weight: .semibold); lbl.textColor = .secondaryLabelColor
+            lbl.frame = NSRect(x: 56, y: 4, width: W - 110, height: 16); cell.addSubview(lbl)
+            lbl.toolTip = "Running apps with nothing open — ⏎ brings one to the front"
+            let c = NSTextField(labelWithString: "\(n)")
+            c.font = .systemFont(ofSize: 12, weight: .medium); c.textColor = .tertiaryLabelColor
+            c.alignment = .right; c.frame = NSRect(x: W - 64, y: 4, width: 42, height: 16); cell.addSubview(c)
+        case .noWindowApp(let name):
+            let iv = NSImageView(frame: NSRect(x: 40, y: 10, width: 20, height: 20))   // indented under the header glyph
+            iv.image = icon(for: name); iv.imageScaling = .scaleProportionallyUpOrDown
+            iv.alphaValue = 0.75; cell.addSubview(iv)                                   // dimmed: lower-priority than open apps
+            let title = NSTextField(labelWithString: name)
+            title.font = titleFont; title.textColor = .secondaryLabelColor
+            title.frame = NSRect(x: 68, y: 11, width: W - 84, height: 18); title.lineBreakMode = .byTruncatingTail
+            title.toolTip = "\(name) — no open window; ⏎ to bring it forward"; cell.addSubview(title)
         case .newContext:
             cell.addSubview(plusRow(glyph: "plus", text: "New context", hint: nil))
         case .addTabs:
