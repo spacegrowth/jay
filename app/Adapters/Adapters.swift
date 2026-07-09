@@ -659,28 +659,39 @@ private let RICH_APPS = Set(ADAPTERS.map { $0.app })
 // Every other regular app, at window level. Pure AX (AXUIElement) — in-process,
 // fast, and needs ONLY the Accessibility permission (no "control System Events").
 
-private func genericContexts() -> [TabRef] {
-    // Skip apps handled elsewhere: built-in adapters AND any app an enabled plugin covers — otherwise
-    // the plugin's items and the generic window entry BOTH show (e.g. Terminal appears twice).
-    let covered = RICH_APPS.union(PluginHost.statuses().filter { $0.enabled }.compactMap { $0.targetApp })
+private func genericContexts(skipPluginApps: Set<String> = []) -> [TabRef] {
+    // Skip adapter-backed apps (they have their own rich entries) and any app whose plugin actually
+    // produced items — otherwise the plugin's tabs and the generic window entry BOTH show (double-listing).
+    // An enabled plugin that returned nothing (e.g. TradingView without its debug port) does NOT block
+    // the generic entry — the app still shows with its AX windows rather than vanishing entirely.
+    let covered = RICH_APPS.union(skipPluginApps)
     var refs: [TabRef] = []
     for running in NSWorkspace.shared.runningApplications {
         guard running.activationPolicy == .regular,                 // real UI apps only (excludes us: accessory)
               let name = running.localizedName, !covered.contains(name) else { continue }
         let appEl = AXUIElementCreateApplication(running.processIdentifier)
         var wv: AnyObject?
-        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &wv) == .success,
-              let windows = wv as? [AXUIElement] else { continue }
-        for win in windows {
-            var tv: AnyObject?
-            AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &tv)
-            let title = (tv as? String) ?? ""
+        let ok = AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &wv) == .success
+        let windows = (wv as? [AXUIElement]) ?? []
+        if ok, !windows.isEmpty {
+            for win in windows {
+                var tv: AnyObject?
+                AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &tv)
+                let title = (tv as? String) ?? ""
+                let runApp = running
+                refs.append(TabRef(app: name, group: name, title: title.isEmpty ? name : title, url: nil,
+                    activate: {
+                        runApp.activate()
+                        AXUIElementPerformAction(win, kAXRaiseAction as CFString)
+                    }))
+            }
+        } else {
+            // AX can't read this app's windows (Electron apps, Java apps, or an app that's
+            // mid-launch). Add a bare fallback — app name, no title — so it at least appears
+            // and ⏎ brings it forward instead of vanishing entirely.
             let runApp = running
-            refs.append(TabRef(app: name, group: name, title: title.isEmpty ? name : title, url: nil,
-                activate: {
-                    runApp.activate()
-                    AXUIElementPerformAction(win, kAXRaiseAction as CFString)
-                }))
+            refs.append(TabRef(app: name, group: name, title: name, url: nil,
+                activate: { runApp.activate() }))
         }
     }
     return refs
@@ -798,9 +809,11 @@ func isRunning(_ name: String) -> Bool {
 }
 
 func allContexts() -> [TabRef] {
+    let pluginRefs = pluginContexts()                // external plugins — run FIRST so we know which apps
+    let pluginApps = Set(pluginRefs.map { $0.app })  // they actually covered (not just enabled but empty)
     var refs = ADAPTERS.filter { isRunning($0.app) }.flatMap { $0.enumerate() }
-    refs += genericContexts()
-    refs += pluginContexts()                         // external drop-in adapters (out-of-process)
+    refs += genericContexts(skipPluginApps: pluginApps)
+    refs += pluginRefs
     return refs
 }
 
