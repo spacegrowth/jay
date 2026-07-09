@@ -16,9 +16,13 @@ cp AppIcon.icns menubar-glyph.png "$APP/Contents/Resources/"   # Finder/About ic
 # Bundle the built-in plugins inside the app (Resources/Plugins). They travel with the app and are
 # OFF by default — the user enables the ones they want (first-run checklist / Preferences ▸ Plugins).
 mkdir -p "$APP/Contents/Resources/Plugins"
-for p in terminal vscode; do
-  [ -d "../plugins/$p" ] && cp -R "../plugins/$p" "$APP/Contents/Resources/Plugins/$p"
-done
+	# Auto-discover: bundle every plugin under ../plugins/ — no hardcoded list.
+	# Works identically in repos with different plugin sets; nothing to configure per checkout.
+	if [ -d "../plugins" ]; then
+	  for p in ../plugins/*/; do
+	    [ -d "$p" ] && cp -R "$p" "$APP/Contents/Resources/Plugins/$(basename "$p")"
+	  done
+	fi
 
 # Source is grouped by concern: Core/ Contexts/ Adapters/ Triggers/ UI/. Tests/ is the standalone
 # logic-test target (not part of the app). One swiftc invocation compiles them all together.

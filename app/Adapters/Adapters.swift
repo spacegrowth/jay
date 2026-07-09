@@ -648,7 +648,7 @@ let ADAPTERS: [Adapter] = [
     Adapter(app: "Music",    enumerate: musicContexts),      // Now Playing + Recently Played smart playlist
     Adapter(app: "Messages", enumerate: messagesContexts),   // recent conversations via AppleScript (Automation only)
     Adapter(app: "Mail",     enumerate: mailContexts),       // recent Inbox messages (subject + sender)
-    // Hard or third-party targets without a native adapter are handled as external plugins (see PluginHost).
+    // TradingView and other hard/third-party targets are external plugins (see PluginHost).
 ] + CHROMIUM_BROWSERS.map { name in Adapter(app: name, enumerate: { chromiumContexts(name) }) }
   + AX_BROWSERS.map { name in Adapter(app: name, enumerate: { axBrowserContexts(name) }) }
 
@@ -797,83 +797,11 @@ func isRunning(_ name: String) -> Bool {
     NSWorkspace.shared.runningApplications.contains { $0.localizedName == name }
 }
 
-/// Attributes each on-screen window to a macOS Space via the private CoreGraphics (SkyLight) Space
-/// API — the only way to know which Space a window is on (the public AX API can't, and is flaky/opaque
-/// for some apps like Messages and Java apps). Loaded with dlsym so a missing symbol on a future macOS
-/// degrades gracefully (currentSpace() returns nil → callers fall back to no gating) instead of a
-/// launch-time crash. Needs no permission — not even Accessibility.
-private enum CGSpaces {
-    private typealias MainConnFn = @convention(c) () -> Int32
-    private typealias ManagedFn  = @convention(c) (Int32) -> Unmanaged<CFArray>?
-    private typealias ForWinsFn  = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
-
-    private static let handle = dlopen(nil, RTLD_LAZY)   // symbols are already loaded in-process (CoreGraphics)
-    private static func sym<T>(_ name: String, _ type: T.Type) -> T? {
-        guard let h = handle, let p = dlsym(h, name) else { return nil }
-        return unsafeBitCast(p, to: T.self)
-    }
-    private static let mainConn = sym("CGSMainConnectionID", MainConnFn.self)
-    private static let managed  = sym("CGSCopyManagedDisplaySpaces", ManagedFn.self)
-    private static let forWins  = sym("CGSCopySpacesForWindows", ForWinsFn.self)
-
-    /// (pids with a window on the current Space, pids with any on-screen window). nil if the private
-    /// API is unavailable — callers then skip Space gating entirely.
-    static func currentSpace() -> (onCurrent: Set<pid_t>, anyRealWindow: Set<pid_t>)? {
-        guard let mainConn = mainConn, let managed = managed, let forWins = forWins else { return nil }
-        let conn = mainConn()
-        guard let displays = managed(conn)?.takeRetainedValue() as? [[String: Any]] else { return nil }
-        // "Current Space" is PER DISPLAY — with "Displays have separate Spaces" (or just multiple
-        // monitors) there are several visible Spaces at once. Collect them ALL: an app is "here" if
-        // it's on ANY visible Space. (The earlier single-value version kept only the last display's
-        // current Space, so everything on the other display's Space was gated out permanently.)
-        var current = Set<Int>()
-        for d in displays { if let c = (d["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int { current.insert(c) } }
-        guard !current.isEmpty else { return nil }
-
-        let info = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
-        var widsByPid: [pid_t: [Int]] = [:]
-        for w in info where (w[kCGWindowLayer as String] as? Int) == 0 {          // layer 0 = app windows (skip menubar/Dock chrome)
-            guard let p = w[kCGWindowOwnerPID as String] as? Int, let wid = w[kCGWindowNumber as String] as? Int else { continue }
-            widsByPid[pid_t(p), default: []].append(wid)
-        }
-        // Per pid, take the UNION of its windows' Spaces. Apps keep phantom off-Space helper windows
-        // (full-width 30px strips, 0-size panels) even after every real window is closed — those carry
-        // NO Space, so an app whose union is empty has no REAL window at all. That distinction powers
-        // both the Space gate (fail-open) and the "no window" group (which must not be fooled by phantoms).
-        var onCurrent = Set<pid_t>(), anyRealWindow = Set<pid_t>()
-        for (pid, wids) in widsByPid {
-            let sp = Set(forWins(conn, 0x7, wids as CFArray)?.takeRetainedValue() as? [Int] ?? [])   // 0x7 = all Space types
-            guard !sp.isEmpty else { continue }                                  // only phantom/off-Space helpers → no real window
-            anyRealWindow.insert(pid)
-            if !sp.isDisjoint(with: current) { onCurrent.insert(pid) }           // has a window on a visible Space
-        }
-        return (onCurrent, anyRealWindow)
-    }
-}
-
 func allContexts() -> [TabRef] {
     var refs = ADAPTERS.filter { isRunning($0.app) }.flatMap { $0.enumerate() }
     refs += genericContexts()
     refs += pluginContexts()                         // external drop-in adapters (out-of-process)
-
-    // Space-awareness, made CONSISTENT. The generic AX path only ever sees windows on the current
-    // Space, but adapters/plugins enumerate via AppleScript / IPC, which see every Space — so without
-    // this an app parked on another Space (Messages, VS Code, TradingView) leaks its tabs here while
-    // generic apps don't. Gate every source by "does this app have a window on THIS Space", attributed
-    // via CGS. FAILS OPEN: if the Space API is unavailable, or an app has no attributable window at
-    // all (e.g. Messages with its window closed), we don't gate it — we never hide what we can't place.
-    guard let space = CGSpaces.currentSpace() else { return refs }   // no Space API → show everything
-    var shown: [pid_t: Bool] = [:]
-    func onSpace(_ appName: String) -> Bool {
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == appName })
-        else { return true }                                          // not a real running app (always-on plugin) → keep
-        let pid = app.processIdentifier
-        if let v = shown[pid] { return v }
-        let v = !space.anyRealWindow.contains(pid)  // no real window anywhere → can't place it → fail open
-             || space.onCurrent.contains(pid)       // has a window on this Space → show
-        shown[pid] = v; return v
-    }
-    return refs.filter { onSpace($0.app) }
+    return refs
 }
 
 /// Bridge external plugins into the same TabRef list the built-in adapters produce. Each plugin
@@ -931,4 +859,3 @@ func arcSpaceEmojiMap() -> [String: String] { arcSpaceEmojis() }
 func activateApp(_ name: String) {
     NSWorkspace.shared.runningApplications.first { $0.localizedName == name }?.activate()
 }
-
