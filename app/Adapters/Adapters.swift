@@ -932,22 +932,3 @@ func activateApp(_ name: String) {
     NSWorkspace.shared.runningApplications.first { $0.localizedName == name }?.activate()
 }
 
-/// Regular apps that are running but have NO real window on ANY Space — they show in ⌘-Tab yet have
-/// nothing for Jay to summon. Surfaced in a collapsed "no window" group (⏎ brings the app forward).
-/// `shown` = apps already listed with tabs/windows, so we never double-list. "Real window" = a
-/// Space-attributed one: apps keep phantom off-Space helper windows (30px strips, 0-size panels) even
-/// after every real window is closed, so counting raw CGWindowList entries would wrongly treat a
-/// windowless app (e.g. Obsidian with its window closed) as windowed. This is TRUE windowless, NOT
-/// "on another Space": an app parked on / minimized to another Space still has a real window, so it's
-/// excluded here and simply doesn't appear — same as a generic app on another Space.
-func windowlessApps(excluding shown: Set<String>) -> [String] {
-    guard let real = CGSpaces.currentSpace()?.anyRealWindow else { return [] }   // no Space API → can't tell reliably → no group
-    var out: [String] = []
-    for running in NSWorkspace.shared.runningApplications {
-        guard running.activationPolicy == .regular,                          // real UI apps only (skips accessories + us)
-              let name = running.localizedName,
-              name != "Jay", !shown.contains(name) else { continue }
-        if !real.contains(running.processIdentifier) { out.append(name) }    // no real window anywhere → truly windowless
-    }
-    return out.sorted()
-}

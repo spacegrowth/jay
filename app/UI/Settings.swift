@@ -105,7 +105,6 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     private let menuIconToggle = NSButton(checkboxWithTitle: "Show menu bar icon", target: nil, action: nil)
     private let edgeToggle = NSButton(checkboxWithTitle: "Summon at left screen edge", target: nil, action: nil)
     private let contextsToggle = NSButton(checkboxWithTitle: "Show Contexts", target: nil, action: nil)
-    private let contextsFirstToggle = NSButton(checkboxWithTitle: "Contexts-first layout", target: nil, action: nil)
     private let faviconToggle = NSButton(checkboxWithTitle: "Fetch site icons from the network", target: nil, action: nil)
     private let edgeRange = RangeSlider()
     private let edgeBandLabel = NSTextField(labelWithString: "")
@@ -229,13 +228,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         contextsToggle.target = self; contextsToggle.action = #selector(toggleContexts(_:))
         contextsToggle.state = UserDefaults.standard.bool(forKey: "showContexts") ? .on : .off
         let contextsNote = detail("Tabs, sessions and windows that belong to the same task are grouped at the top — a repo, a project, a site. Grouped and labelled on-device; your renames are kept.")
-        let ctxDivider = NSBox(); ctxDivider.boxType = .separator
 
-        contextsFirstToggle.title = "Open to Contexts, fold the app list"
-        contextsFirstToggle.font = .systemFont(ofSize: 13)
-        contextsFirstToggle.target = self; contextsFirstToggle.action = #selector(toggleContextsFirst(_:))
-        contextsFirstToggle.state = UserDefaults.standard.bool(forKey: "contextsFirst") ? .on : .off
-        let contextsFirstNote = detail("Land on your Contexts first; every app collapses under one “All Apps” row you expand on demand.")
 
         // — Favicons —
         faviconToggle.font = .systemFont(ofSize: 13)
@@ -307,7 +300,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
             ("Site icons",      card([faviconToggle, faviconNote])),
         ])
         let contextsVC = makePaneVC([
-            ("Contexts", card([contextsToggle, contextsNote, ctxDivider, contextsFirstToggle, contextsFirstNote])),
+            ("Contexts", card([contextsToggle, contextsNote])),
         ])
         permsVC = makePaneVC([
             ("Accessibility", card([permRow, permDetail, accessButton])),
@@ -334,7 +327,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
             tabVC.addTabViewItem(item)
         }
         window.contentViewController = tabVC
-        syncNote(); syncEdge(); syncContexts(); refreshPluginsPane()
+        syncNote(); syncEdge(); refreshPluginsPane()
     }
 
     // MARK: Plugins tab
@@ -658,17 +651,9 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     }
     @objc private func toggleContexts(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "showContexts")
-        syncContexts()
     }
     @objc private func toggleFavicon(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "faviconLookup")
-    }
-    /// The "fold the app list" option only makes sense with Contexts on — gray it out otherwise.
-    private func syncContexts() {
-        contextsFirstToggle.isEnabled = (contextsToggle.state == .on)
-    }
-    @objc private func toggleContextsFirst(_ sender: NSButton) {
-        UserDefaults.standard.set(sender.state == .on, forKey: "contextsFirst")
     }
     @objc private func toggleMenuIcon(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "showMenuIcon")
@@ -701,9 +686,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         loginToggle.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
         menuIconToggle.state = UserDefaults.standard.bool(forKey: "showMenuIcon") ? .on : .off
         contextsToggle.state = UserDefaults.standard.bool(forKey: "showContexts") ? .on : .off
-        contextsFirstToggle.state = UserDefaults.standard.bool(forKey: "contextsFirst") ? .on : .off
         syncNote()
-        syncContexts()
         updatePermissions()
         // Poll while open — the user may grant/revoke in System Settings live.
         accessTimer?.invalidate()
