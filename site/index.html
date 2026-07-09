@@ -29,7 +29,9 @@
   body{
     margin:0;font-family:var(--font);color:var(--text);background:var(--bg);
     -webkit-font-smoothing:antialiased;line-height:1.55;overflow-x:hidden;
+    scrollbar-width:none;
   }
+  body::-webkit-scrollbar{display:none}
   body::before{ /* ambient portal glow */
     content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
     background:
