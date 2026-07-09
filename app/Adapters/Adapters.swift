@@ -652,19 +652,17 @@ let ADAPTERS: [Adapter] = [
 ] + CHROMIUM_BROWSERS.map { name in Adapter(app: name, enumerate: { chromiumContexts(name) }) }
   + AX_BROWSERS.map { name in Adapter(app: name, enumerate: { axBrowserContexts(name) }) }
 
-private let RICH_APPS = Set(ADAPTERS.map { $0.app })
-
 // MARK: - Generic fallback via the Accessibility API (fast, no AppleScript)
 //
 // Every other regular app, at window level. Pure AX (AXUIElement) — in-process,
 // fast, and needs ONLY the Accessibility permission (no "control System Events").
 
-private func genericContexts(skipPluginApps: Set<String> = []) -> [TabRef] {
-    // Skip adapter-backed apps (they have their own rich entries) and any app whose plugin actually
-    // produced items — otherwise the plugin's tabs and the generic window entry BOTH show (double-listing).
-    // An enabled plugin that returned nothing (e.g. TradingView without its debug port) does NOT block
-    // the generic entry — the app still shows with its AX windows rather than vanishing entirely.
-    let covered = RICH_APPS.union(skipPluginApps)
+private func genericContexts(skipApps: Set<String> = []) -> [TabRef] {
+    // Skip any app whose adapter or plugin actually produced items — otherwise rich entries and
+    // generic window entries would both show (double-listing). An adapter/plugin that returned
+    // nothing (e.g. Music with nothing playing, or TradingView without its debug port) does NOT
+    // block the generic entry — the app still shows with its AX windows rather than vanishing.
+    let covered = skipApps
     var refs: [TabRef] = []
     for running in NSWorkspace.shared.runningApplications {
         guard running.activationPolicy == .regular,                 // real UI apps only (excludes us: accessory)
@@ -811,8 +809,10 @@ func isRunning(_ name: String) -> Bool {
 func allContexts() -> [TabRef] {
     let pluginRefs = pluginContexts()                // external plugins — run FIRST so we know which apps
     let pluginApps = Set(pluginRefs.map { $0.app })  // they actually covered (not just enabled but empty)
-    var refs = ADAPTERS.filter { isRunning($0.app) }.flatMap { $0.enumerate() }
-    refs += genericContexts(skipPluginApps: pluginApps)
+    let adapterRefs = ADAPTERS.filter { isRunning($0.app) }.flatMap { $0.enumerate() }
+    let adapterApps = Set(adapterRefs.map { $0.app }) // only adapters that actually produced items
+    var refs = adapterRefs
+    refs += genericContexts(skipApps: adapterApps.union(pluginApps))
     refs += pluginRefs
     return refs
 }
