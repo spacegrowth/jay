@@ -36,6 +36,7 @@ if !UserDefaults.standard.bool(forKey: "didInitLoginItem") {
     try? SMAppService.mainApp.register()
 }
 
+let updater = UpdateController()      // constructed before settings — SettingsPanel.build() reads it
 let settings = SettingsPanel()
 let switcher = SwitcherPanel()
 switcher.onOpenSettings = { settings.show() }
@@ -74,11 +75,13 @@ final class MenuController: NSObject {
     }
     private func showMenu() {
         let menu = NSMenu()
+        let checkUpdates = NSMenuItem(title: "Check for Updates…", action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "")
+        checkUpdates.target = updater
         let prefs = NSMenuItem(title: "Preferences…", action: #selector(openPrefs), keyEquivalent: ",")
         prefs.target = self
         let quit = NSMenuItem(title: "Quit Jay", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
-        menu.addItem(prefs); menu.addItem(.separator()); menu.addItem(quit)
+        menu.addItem(checkUpdates); menu.addItem(.separator()); menu.addItem(prefs); menu.addItem(.separator()); menu.addItem(quit)
         item.menu = menu                     // assign just for this pop, then clear so left-click still summons
         item.button?.performClick(nil)
         item.menu = nil

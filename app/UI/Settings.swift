@@ -103,6 +103,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     private let note = NSTextField(wrappingLabelWithString: "")
     private let loginToggle = NSButton(checkboxWithTitle: "Open at login", target: nil, action: nil)
     private let menuIconToggle = NSButton(checkboxWithTitle: "Show menu bar icon", target: nil, action: nil)
+    private let autoUpdateToggle = NSButton(checkboxWithTitle: "Automatically check for updates", target: nil, action: nil)
     private let edgeToggle = NSButton(checkboxWithTitle: "Summon at left screen edge", target: nil, action: nil)
     private let contextsToggle = NSButton(checkboxWithTitle: "Show Contexts", target: nil, action: nil)
     private let faviconToggle = NSButton(checkboxWithTitle: "Fetch site icons from the network", target: nil, action: nil)
@@ -222,6 +223,10 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         menuIconToggle.state = UserDefaults.standard.bool(forKey: "showMenuIcon") ? .on : .off
         menuIconToggle.toolTip = "If hidden, summon with your shortcut, then open Preferences from the panel's gear."
 
+        autoUpdateToggle.font = .systemFont(ofSize: 13)
+        autoUpdateToggle.target = self; autoUpdateToggle.action = #selector(toggleAutoUpdate(_:))
+        autoUpdateToggle.state = updater.automaticallyChecksForUpdates ? .on : .off
+
         // — Contexts —
         contextsToggle.title = "Show Contexts"
         contextsToggle.font = .systemFont(ofSize: 13)
@@ -296,7 +301,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         generalVC = makePaneVC([
             ("Summon shortcut", card([triggerPopup, recorder, note, shortcutDetail])),
             ("Screen edge",     card([edgeToggle, edgeRange, edgeBandLabel, edgeDetail])),
-            ("Startup",         card([loginToggle, menuIconToggle])),
+            ("Startup",         card([loginToggle, menuIconToggle, autoUpdateToggle])),
             ("Site icons",      card([faviconToggle, faviconNote])),
         ])
         let contextsVC = makePaneVC([
@@ -659,6 +664,9 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         UserDefaults.standard.set(sender.state == .on, forKey: "showMenuIcon")
         menuController.applyVisibility()
     }
+    @objc private func toggleAutoUpdate(_ sender: NSButton) {
+        updater.automaticallyChecksForUpdates = sender.state == .on
+    }
 
     @objc private func toggleLogin(_ sender: NSButton) {
         do {
@@ -686,6 +694,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         loginToggle.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
         menuIconToggle.state = UserDefaults.standard.bool(forKey: "showMenuIcon") ? .on : .off
         contextsToggle.state = UserDefaults.standard.bool(forKey: "showContexts") ? .on : .off
+        autoUpdateToggle.state = updater.automaticallyChecksForUpdates ? .on : .off
         syncNote()
         updatePermissions()
         // Poll while open — the user may grant/revoke in System Settings live.
