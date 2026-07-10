@@ -15,7 +15,6 @@
   <key>NSAppleEventsUsageDescription</key><string>Jay reads tabs and windows and switches to the one you pick.</string>
   <key>NSContactsUsageDescription</key><string>Jay shows names instead of phone numbers for your recent Messages conversations.</string>
   <key>SUFeedURL</key><string>https://spacegrowth.github.io/jay/appcast.xml</string>
-  <!-- lead fills the real EdDSA public key -->
-  <key>SUPublicEDKey</key><string></string>
+  <key>SUPublicEDKey</key><string>PAH3T7Y8eL9tdQXBjIksAVFqv6xu2sv6seP8GXa8ukk=</string>
 </dict>
 </plist>
