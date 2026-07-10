@@ -439,7 +439,17 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
 
     @objc private func togglePlugin(_ sender: NSSwitch) {
         guard let id = sender.identifier?.rawValue else { return }
-        PluginHost.setEnabled(id, sender.state == .on)     // opt-in: switch on → enabled
+        let on = sender.state == .on
+        PluginHost.setEnabled(id, on)     // opt-in: switch on → enabled
+        if on, let plugin = PluginHost.discoverAll().first(where: { $0.id == id }) {
+            let installed = PluginHost.installEditorExtensions(for: plugin)
+            if !installed.isEmpty {
+                let a = NSAlert()
+                a.messageText = "Jay Bridge installed"
+                a.informativeText = "Installed the Jay Bridge extension into \(installed.joined(separator: ", ")). Reload (⌘⇧P → Developer: Reload Window) to finish."
+                a.runModal()
+            }
+        }
         refreshPluginsPane()
     }
     @objc private func testPlugin(_ sender: NSButton) {

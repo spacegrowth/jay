@@ -26,6 +26,18 @@ struct PluginManifest: Decodable {
     let targetApp: String?    // app name to gate on — only queried while that app runs; nil = always
     let exec: String          // executable/script path, relative to the plugin directory
     let supportsClose: Bool?  // plugin handles `exec close <id>` → items get a hover-× (e.g. VS Code)
+    let editorExtension: EditorExtension?   // optional companion editor extension to auto-install on enable
+}
+
+/// Declares a companion extension bundled with the plugin that needs installing into one or more
+/// editors (e.g. VS Code + Cursor sharing the same "Jay Bridge" extension).
+struct EditorExtension: Decodable {
+    let src: String                  // subfolder of the plugin dir holding the extension
+    let targets: [EditorExtensionTarget]
+}
+struct EditorExtensionTarget: Decodable {
+    let app: String                  // editor app name (e.g. "Visual Studio Code"), used for the .app install check
+    let dest: String                 // install path, may start with "~"
 }
 
 /// Where a plugin came from: bundled in the app, dropped into the support dir, or a folder the
@@ -221,6 +233,46 @@ enum PluginHost {
         let count = data.flatMap { try? JSONDecoder().decode([PluginItem].self, from: $0) }?.count ?? -1
         recordLatency(id, ms: ms)
         return (ms, count)
+    }
+
+    // MARK: editor extension auto-install (VS Code / Cursor "Jay Bridge")
+
+    /// Install a plugin's declared `editorExtension` into each target editor that's actually
+    /// present, replacing any stale copy. Idempotent: does nothing for a target whose installed
+    /// `package.json` version already matches the bundled one. Silently skips targets whose editor
+    /// isn't installed (no `.app` and no existing extensions folder) — self-heals on a later call
+    /// once the editor shows up. Returns the `app` name of each target that was (re)installed, for
+    /// the caller to show a reload nudge.
+    @discardableResult
+    static func installEditorExtensions(for plugin: LoadedPlugin) -> [String] {
+        guard let ext = plugin.manifest.editorExtension else { return [] }
+        let srcDir = plugin.dir.appendingPathComponent(ext.src, isDirectory: true)
+        let srcVersion = extensionVersion(at: srcDir)
+        var installed: [String] = []
+        for target in ext.targets {
+            let destDir = URL(fileURLWithPath: (target.dest as NSString).expandingTildeInPath, isDirectory: true)
+            let extensionsParent = destDir.deletingLastPathComponent()
+            guard editorAppInstalled(target.app) || FileManager.default.fileExists(atPath: extensionsParent.path) else { continue }
+            guard srcVersion != nil, extensionVersion(at: destDir) != srcVersion else { continue }   // already current (or bad src)
+            try? FileManager.default.createDirectory(at: extensionsParent, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: destDir)          // never error if dest already exists — replace cleanly
+            guard (try? FileManager.default.copyItem(at: srcDir, to: destDir)) != nil else { continue }
+            installed.append(target.app)
+        }
+        return installed
+    }
+
+    /// Best-effort "is this editor installed" check: its .app in /Applications or ~/Applications,
+    /// OR its extensions folder already exists (it's run before, even if since moved/renamed).
+    private static func editorAppInstalled(_ appName: String) -> Bool {
+        ["/Applications/\(appName).app", NSHomeDirectory() + "/Applications/\(appName).app"]
+            .contains { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    private static func extensionVersion(at dir: URL) -> String? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("package.json")),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return obj["version"] as? String
     }
 
     /// Everything installed + its state — for the Preferences ▸ Plugins list.

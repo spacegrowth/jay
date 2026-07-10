@@ -3,5 +3,12 @@
   "name": "VS Code",
   "targetApp": "Code",
   "exec": "adapter",
-  "supportsClose": true
+  "supportsClose": true,
+  "editorExtension": {
+    "src": "extension",
+    "targets": [
+      { "app": "Visual Studio Code", "dest": "~/.vscode/extensions/jay-bridge" },
+      { "app": "Cursor",             "dest": "~/.cursor/extensions/jay-bridge" }
+    ]
+  }
 }
