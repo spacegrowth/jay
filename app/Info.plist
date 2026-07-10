@@ -2,19 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Jay</string>
-  <key>CFBundleDisplayName</key><string>Jay</string>
-  <key>CFBundleExecutable</key><string>Jay</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundleIdentifier</key><string>com.jaymac.jay</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>LSUIElement</key><true/>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>NSAppleEventsUsageDescription</key><string>Jay reads tabs and windows and switches to the one you pick.</string>
-  <key>NSContactsUsageDescription</key><string>Jay shows names instead of phone numbers for your recent Messages conversations.</string>
-  <key>SUFeedURL</key><string>https://spacegrowth.github.io/jay/appcast.xml</string>
-  <key>SUPublicEDKey</key><string>PAH3T7Y8eL9tdQXBjIksAVFqv6xu2sv6seP8GXa8ukk=</string>
+	<key>CFBundleDisplayName</key>
+	<string>Jay</string>
+	<key>CFBundleExecutable</key>
+	<string>Jay</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.jaymac.jay</string>
+	<key>CFBundleName</key>
+	<string>Jay</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.8</string>
+	<key>CFBundleVersion</key>
+	<string>0.2.8</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Jay reads tabs and windows and switches to the one you pick.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Jay shows names instead of phone numbers for your recent Messages conversations.</string>
+	<key>SUFeedURL</key>
+	<string>https://spacegrowth.github.io/jay/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>PAH3T7Y8eL9tdQXBjIksAVFqv6xu2sv6seP8GXa8ukk=</string>
 </dict>
 </plist>
