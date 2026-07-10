@@ -29,7 +29,11 @@ mkdir -p "$APP/Contents/Resources/Plugins"
 SRC=$(find Core Contexts Adapters Triggers UI -name '*.swift' | sort)
 swiftc -swift-version 5 $SRC -o "$APP/Contents/MacOS/Jay"
 
-codesign --force --sign "$IDENTITY" "$APP"
+codesign --force --sign "$IDENTITY" \
+    --options runtime \
+    --entitlements Jay.entitlements \
+    --timestamp \
+    "$APP"
 
 echo "built + signed: $(pwd)/$APP"
 echo "run:  open $APP    (then double-tap ⌥)"
