@@ -24,10 +24,33 @@ mkdir -p "$APP/Contents/Resources/Plugins"
 	  done
 	fi
 
+# Embed the vendored Sparkle framework (app/Vendor/Sparkle.framework) into the bundle. It travels
+# in Contents/Frameworks and is found at runtime via the @executable_path/../Frameworks rpath added
+# to the swiftc link below. Nested Sparkle code is code-signed further down, before the app itself.
+mkdir -p "$APP/Contents/Frameworks"
+ditto Vendor/Sparkle.framework "$APP/Contents/Frameworks/Sparkle.framework"
+
 # Source is grouped by concern: Core/ Contexts/ Adapters/ Triggers/ UI/. Tests/ is the standalone
 # logic-test target (not part of the app). One swiftc invocation compiles them all together.
+# -F Vendor / -framework Sparkle links against the vendored framework; the -rpath makes the loader
+# resolve @rpath/Sparkle.framework to the copy embedded in Contents/Frameworks.
 SRC=$(find Core Contexts Adapters Triggers UI -name '*.swift' | sort)
-swiftc -swift-version 5 $SRC -o "$APP/Contents/MacOS/Jay"
+swiftc -swift-version 5 $SRC -o "$APP/Contents/MacOS/Jay" \
+    -F Vendor -framework Sparkle \
+    -Xlinker -rpath -Xlinker @executable_path/../Frameworks
+
+# Sign inside-out, deepest-first: every nested Sparkle bundle/helper must carry a hardened-runtime
+# signature with OUR identity BEFORE the app is sealed, or --deep --strict verification fails.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+for nested in \
+    "$SPARKLE/Versions/B/XPCServices/Downloader.xpc" \
+    "$SPARKLE/Versions/B/XPCServices/Installer.xpc" \
+    "$SPARKLE/Versions/B/Updater.app" \
+    "$SPARKLE/Versions/B/Autoupdate" \
+    "$SPARKLE"
+do
+    codesign --force --sign "$IDENTITY" --options runtime --timestamp "$nested"
+done
 
 codesign --force --sign "$IDENTITY" \
     --options runtime \

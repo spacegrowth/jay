@@ -1,4 +1,5 @@
 import Foundation
+import Sparkle   // TEMP: force-link Sparkle; sparkle-wiring replaces this (see _SparkleForceLink below)
 
 /// Tiny, **local-only**, private usage log — never leaves the machine. Append-only JSONL
 /// in Application Support, size-capped with one rotation. Purpose: after a month of use,
@@ -49,4 +50,12 @@ final class UsageLog {
         try? FileManager.default.removeItem(at: old)
         try? FileManager.default.moveItem(at: url, to: old)
     }
+}
+
+// TEMP: force-link Sparkle so the dynamic linker binds Sparkle.framework and it loads at launch.
+// This packet (sparkle-build) only vendors/embeds/signs the framework — it wires up NO update UI.
+// The sparkle-wiring packet replaces this with a real SPUStandardUpdaterController instantiation.
+// The `@_used`/reference keeps the symbol from being dead-stripped even though nothing calls it.
+enum _SparkleForceLink {
+    static let type: AnyClass = SPUStandardUpdaterController.self
 }
