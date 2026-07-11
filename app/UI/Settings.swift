@@ -104,6 +104,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     private let loginToggle = NSButton(checkboxWithTitle: "Open at login", target: nil, action: nil)
     private let menuIconToggle = NSButton(checkboxWithTitle: "Show menu bar icon", target: nil, action: nil)
     private let autoUpdateToggle = NSButton(checkboxWithTitle: "Automatically check for updates", target: nil, action: nil)
+    private let autoInstallToggle = NSButton(checkboxWithTitle: "Install updates in the background", target: nil, action: nil)
     private let edgeToggle = NSButton(checkboxWithTitle: "Summon at left screen edge", target: nil, action: nil)
     private let contextsToggle = NSButton(checkboxWithTitle: "Show Contexts", target: nil, action: nil)
     private let faviconToggle = NSButton(checkboxWithTitle: "Fetch site icons from the network", target: nil, action: nil)
@@ -226,6 +227,15 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         autoUpdateToggle.font = .systemFont(ofSize: 13)
         autoUpdateToggle.target = self; autoUpdateToggle.action = #selector(toggleAutoUpdate(_:))
         autoUpdateToggle.state = updater.automaticallyChecksForUpdates ? .on : .off
+        autoInstallToggle.state = updater.automaticallyDownloadsUpdates ? .on : .off
+
+        // Off (default): when an update is found, Sparkle shows "Install and Relaunch" — one click
+        // installs it and restarts into the new version. On: silent background install applied on
+        // next quit (no relaunch prompt). Off is the default so updates are visible + one-click.
+        autoInstallToggle.font = .systemFont(ofSize: 13)
+        autoInstallToggle.target = self; autoInstallToggle.action = #selector(toggleAutoInstall(_:))
+        autoInstallToggle.state = updater.automaticallyDownloadsUpdates ? .on : .off
+        autoInstallToggle.toolTip = "Off: you get a one-click “Install and Relaunch”. On: updates install quietly and apply when you next quit Jay."
 
         // — Contexts —
         contextsToggle.title = "Show Contexts"
@@ -301,7 +311,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         generalVC = makePaneVC([
             ("Summon shortcut", card([triggerPopup, recorder, note, shortcutDetail])),
             ("Screen edge",     card([edgeToggle, edgeRange, edgeBandLabel, edgeDetail])),
-            ("Startup",         card([loginToggle, menuIconToggle, autoUpdateToggle])),
+            ("Startup",         card([loginToggle, menuIconToggle, autoUpdateToggle, autoInstallToggle])),
             ("Site icons",      card([faviconToggle, faviconNote])),
         ])
         let contextsVC = makePaneVC([
@@ -677,6 +687,9 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     @objc private func toggleAutoUpdate(_ sender: NSButton) {
         updater.automaticallyChecksForUpdates = sender.state == .on
     }
+    @objc private func toggleAutoInstall(_ sender: NSButton) {
+        updater.automaticallyDownloadsUpdates = sender.state == .on
+    }
 
     @objc private func toggleLogin(_ sender: NSButton) {
         do {
@@ -705,6 +718,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         menuIconToggle.state = UserDefaults.standard.bool(forKey: "showMenuIcon") ? .on : .off
         contextsToggle.state = UserDefaults.standard.bool(forKey: "showContexts") ? .on : .off
         autoUpdateToggle.state = updater.automaticallyChecksForUpdates ? .on : .off
+        autoInstallToggle.state = updater.automaticallyDownloadsUpdates ? .on : .off
         syncNote()
         updatePermissions()
         // Poll while open — the user may grant/revoke in System Settings live.
