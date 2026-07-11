@@ -94,6 +94,14 @@ final class MenuController: NSObject {
 }
 let menuController = MenuController()
 
+// Any plugin that's ALREADY enabled at launch (persisted-on, or a drop-in that defaults on) needs
+// its companion editor extension present too — the enable-time install only covers the toggle
+// event, not plugins already on. Idempotent (version-checked) and silent here (no launch nag); it
+// self-heals the "enabled but extension not installed" state.
+for p in PluginHost.discoverAll() where PluginHost.isEnabled(p) {
+    PluginHost.installEditorExtensions(for: p)
+}
+
 // First run: if Accessibility isn't granted, show a window that tracks the permission live
 // (red → green) so the user gets clear confirmation instead of a dead-end instruction.
 Onboarding.shared.showIfNeeded()
