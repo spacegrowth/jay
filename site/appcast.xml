@@ -3,13 +3,13 @@
     <channel>
         <title>Jay</title>
         <item>
-            <title>0.2.10</title>
-            <pubDate>Fri, 10 Jul 2026 17:49:37 -0700</pubDate>
-            <sparkle:version>0.2.10</sparkle:version>
-            <sparkle:shortVersionString>0.2.10</sparkle:shortVersionString>
+            <title>0.2.11</title>
+            <pubDate>Fri, 10 Jul 2026 18:16:44 -0700</pubDate>
+            <sparkle:version>0.2.11</sparkle:version>
+            <sparkle:shortVersionString>0.2.11</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/spacegrowth/jay/releases/download/v0.2.10/Jay-0.2.10.app.zip" length="1684719" type="application/octet-stream" sparkle:edSignature="xMVHVD+RMvl7a+bVdDsQ5vLmznk+GplyRDBFjT5AiNyyuMgMoBZv/iW4xLBjmU+4s5ooN+irDHXUvdqVFjlICQ=="/>
+            <enclosure url="https://github.com/spacegrowth/jay/releases/download/v0.2.11/Jay-0.2.11.app.zip" length="1691545" type="application/octet-stream" sparkle:edSignature="G3cp7nullSkuVqc3As3p80xr/zzBMoVeuRWvsrrI90QmWLEaZFqTABXYEt/aE62SWsoM//icU3ZEvCDRXe4xAA=="/>
         </item>
     </channel>
 </rss>
