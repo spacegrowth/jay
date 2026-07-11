@@ -51,7 +51,7 @@
   .edge:hover::after{opacity:.7}
 
   /* NAV */
-  nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(14px);
+  nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(14px);transform:translateZ(0);will-change:backdrop-filter;
     background:rgba(11,13,16,.62);border-bottom:1px solid var(--line)}
   nav .wrap{display:flex;align-items:center;gap:20px;height:64px}
   .brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:17px;letter-spacing:-.01em}
@@ -92,7 +92,7 @@
   .panelmock{position:relative;z-index:1;width:100%;max-width:300px;background:linear-gradient(180deg,rgba(44,44,47,.97),rgba(37,37,40,.97));
     border:1px solid var(--line);border-radius:18px;
     box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.04);
-    padding:4px 12px 12px;backdrop-filter:blur(8px)}
+    padding:4px 12px 12px}  /* backdrop blur removed: bg is 97% opaque so it was invisible, but its layer caused idle re-raster flashes */
   .pm-search{display:flex;align-items:center;gap:9px;padding:7px 13px;background:rgba(0,0,0,.24);border:1px solid var(--line);border-radius:15px;color:var(--dim);font-size:14px}
   .pm-search .searchjay{width:15px;height:15px;flex:0 0 auto;color:var(--dim);opacity:.85;margin-left:auto}
   .pm-search .mag{width:15px;height:15px;color:var(--dim);flex:0 0 auto}
