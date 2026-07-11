@@ -11,3 +11,4 @@ Jay-Installer.pkg
 # release pipeline work dirs
 build/
 installer/.sparkle-tools/
+Jay.dmg

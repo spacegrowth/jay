@@ -3,7 +3,7 @@
 # Sparkle appcast, and publish to GitHub Pages (feed) + a GitHub Release (downloads).
 #
 # Produces per release:
-#   Jay-Installer.pkg      — first-time install (notarized + stapled)
+#   Jay.dmg                — first-time install: drag-and-drop disk image (notarized + stapled)
 #   Jay-<ver>.app.zip      — Sparkle auto-update payload (notarized + stapled .app)
 #   site/appcast.xml       — the EdDSA-signed Sparkle feed (deploys to Pages on push)
 #
@@ -59,12 +59,11 @@ xcrun stapler staple "$APP"
 rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
 xcrun stapler validate "$APP"
 
-# 4) Build the installer .pkg from the SAME stapled app (no APP_IDENTITY => reuse app/Jay.app),
-#    then notarize + staple the pkg.
-echo "==> Building + notarizing Jay-Installer.pkg"
-INSTALLER_IDENTITY="$INSTALLER_IDENTITY" installer/build-installer.sh "$VERSION"
-xcrun notarytool submit "$ROOT/Jay-Installer.pkg" --keychain-profile "$NOTARY_PROFILE" --wait
-xcrun stapler staple "$ROOT/Jay-Installer.pkg"
+# 4) Build the drag-and-drop DMG from the SAME stapled app, then notarize + staple the .dmg.
+echo "==> Building + notarizing Jay.dmg"
+APP_IDENTITY="$APP_IDENTITY" installer/build-dmg.sh
+xcrun notarytool submit "$ROOT/Jay.dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun stapler staple "$ROOT/Jay.dmg"
 
 # 5) Generate the EdDSA-signed appcast. generate_appcast finds the private key in the keychain and
 #    signs each archive in $DIST; --download-url-prefix makes enclosures point at the Release assets.
@@ -83,13 +82,13 @@ git push origin main
 # 7) Publish the downloads as a GitHub Release.
 echo "==> Creating GitHub Release ${TAG}"
 gh release create "$TAG" \
-  "$ROOT/Jay-Installer.pkg" \
+  "$ROOT/Jay.dmg" \
   "$ZIP" \
   --title "${TAG}" \
-  --notes "Jay ${VERSION}. Install \`Jay-Installer.pkg\` (notarized). Existing installs auto-update via Sparkle."
+  --notes "Jay ${VERSION}. Download \`Jay.dmg\` and drag Jay to Applications (notarized). Existing installs auto-update via Sparkle."
 
 echo ""
 echo "Done. Released ${TAG}:"
-echo "  pkg:     $ROOT/Jay-Installer.pkg"
+echo "  dmg:     $ROOT/Jay.dmg"
 echo "  update:  $ZIP"
 echo "  appcast: https://spacegrowth.github.io/jay/appcast.xml (deploying via Pages)"
