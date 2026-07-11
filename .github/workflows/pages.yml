@@ -23,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Fetch the latest Jay.dmg into the site
+        # Serve the DMG SAME-ORIGIN from Pages so the download attribute is honored and the file
+        # saves as "Jay.dmg" (cross-origin GitHub links let Safari name it after the page title).
+        run: curl -fsSL -o site/Jay.dmg https://github.com/spacegrowth/jay/releases/latest/download/Jay.dmg || echo "no release yet — skipping"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site        # the landing page lives in site/

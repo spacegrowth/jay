@@ -73,19 +73,22 @@ echo "==> Generating EdDSA-signed appcast.xml"
   "$DIST"
 cp "$DIST/appcast.xml" "$ROOT/site/appcast.xml"
 
-# 6) Publish the feed (commit appcast.xml + version bump; push deploys Pages).
-echo "==> Publishing appcast to GitHub Pages (site/appcast.xml)"
-git add site/appcast.xml app/Info.plist
-git commit -m "Release ${TAG}: appcast + version bump" || echo "(nothing to commit)"
-git push origin main
-
-# 7) Publish the downloads as a GitHub Release.
+# 6) Publish the downloads as a GitHub Release FIRST — so the release + assets exist before the
+#    push below deploys the site, and before the Pages workflow fetches Jay.dmg into the site.
 echo "==> Creating GitHub Release ${TAG}"
 gh release create "$TAG" \
   "$ROOT/Jay.dmg" \
   "$ZIP" \
   --title "${TAG}" \
   --notes "Jay ${VERSION}. Download \`Jay.dmg\` and drag Jay to Applications (notarized). Existing installs auto-update via Sparkle."
+
+# 7) Publish the feed (commit appcast.xml + version bump; push deploys Pages). The Pages workflow
+#    fetches the just-published Jay.dmg into the site so the website serves it SAME-ORIGIN — which
+#    makes the download attribute stick and the file save as "Jay.dmg" (not the page title).
+echo "==> Publishing appcast to GitHub Pages (site/appcast.xml)"
+git add site/appcast.xml app/Info.plist
+git commit -m "Release ${TAG}: appcast + version bump" || echo "(nothing to commit)"
+git push origin main
 
 echo ""
 echo "Done. Released ${TAG}:"
