@@ -72,6 +72,10 @@ final class ContextStore {
     }
 
     private func refineLabels(for clustered: [WorkContext]) {
+        // On-device AI naming is OPT-IN (off by default): only run the model when the user has
+        // enabled it in Preferences ▸ Contexts. When off, contexts keep their derived labels.
+        // Reads the store's own `defaults` (=.standard in the app, which the toggle writes).
+        guard defaults.bool(forKey: "ctxAILabeling") else { return }
         // Name a context when it's NEW or its composition CHANGED (apps/keys), but not on every
         // compute — the model is non-deterministic, so re-labeling unchanged contexts would make
         // names (and sort order) flicker. User renames always win and are never touched.

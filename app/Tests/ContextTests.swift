@@ -135,9 +135,10 @@ private func testStoreAILabeling() {
         item("Arc", "repo", "https://github.com/x/api"),
         item("iTerm2", "~/dev/api"),
     ]
+    let d = freshDefaults("ctxtest.ai"); d.set(true, forKey: "ctxAILabeling")   // on-device naming is opt-in
     let store = ContextStore(gatherItems: { items }, overrides: ContextOverrides(),
                              labeler: StubLabeler(map: ["proj:api": "Backend"]),
-                             defaults: freshDefaults("ctxtest.ai"))
+                             defaults: d)
     var fired = 0
     store.onChange = { fired += 1 }
     store.recompute()                                              // publishes derived ("api") synchronously
@@ -255,8 +256,9 @@ private func testStickyEvolve() {
         item("iTerm2", "~/dev/api"),
     ]
     let flip = FlipLabeler()
+    let d = freshDefaults("ctxtest.sticky"); d.set(true, forKey: "ctxAILabeling")   // enable opt-in AI naming
     let store = ContextStore(gatherItems: { items }, overrides: ContextOverrides(),
-                             labeler: flip, defaults: freshDefaults("ctxtest.sticky"))
+                             labeler: flip, defaults: d)
     store.recompute(); drain()
     eq(store.contexts.first?.label, "name1", "named on first sight")
     eq(flip.calls, 1, "labeler called once")
@@ -269,6 +271,14 @@ private func testStickyEvolve() {
     store.recompute(); drain()
     eq(store.contexts.first?.label, "name2", "composition change → re-labeled (evolves)")
     eq(flip.calls, 2, "labeler called again only because content changed")
+
+    // OFF (default): with on-device naming disabled, the model is never called; labels stay derived.
+    let off = FlipLabeler()
+    let offStore = ContextStore(gatherItems: { items }, overrides: ContextOverrides(),
+                                labeler: off, defaults: freshDefaults("ctxtest.sticky.off"))
+    offStore.recompute(); drain()
+    eq(off.calls, 0, "AI naming OFF (default) → labeler never called")
+    expect(offStore.contexts.first?.label != "name1", "OFF → label stays derived, not AI-named")
 }
 
 // MARK: run

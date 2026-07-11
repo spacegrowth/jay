@@ -107,6 +107,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     private let autoInstallToggle = NSButton(checkboxWithTitle: "Install updates in the background", target: nil, action: nil)
     private let edgeToggle = NSButton(checkboxWithTitle: "Summon at left screen edge", target: nil, action: nil)
     private let contextsToggle = NSButton(checkboxWithTitle: "Show Contexts", target: nil, action: nil)
+    private let aiLabelToggle = NSButton(checkboxWithTitle: "Name contexts with on-device AI", target: nil, action: nil)
     private let faviconToggle = NSButton(checkboxWithTitle: "Fetch site icons from the network", target: nil, action: nil)
     private let edgeRange = RangeSlider()
     private let edgeBandLabel = NSTextField(labelWithString: "")
@@ -242,7 +243,15 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         contextsToggle.font = .systemFont(ofSize: 13)
         contextsToggle.target = self; contextsToggle.action = #selector(toggleContexts(_:))
         contextsToggle.state = UserDefaults.standard.bool(forKey: "showContexts") ? .on : .off
-        let contextsNote = detail("Tabs, sessions and windows that belong to the same task are grouped at the top — a repo, a project, a site. Grouped and labelled on-device; your renames are kept.")
+        let contextsNote = detail("Tabs, sessions and windows that belong to the same task are grouped at the top — a repo, a project, a site. Grouped on-device; your renames are kept.")
+
+        // On-device AI naming is opt-in (off by default). When on, Apple's on-device model
+        // (FoundationModels, macOS 26) proposes context names — fully local, nothing leaves the Mac.
+        aiLabelToggle.font = .systemFont(ofSize: 13)
+        aiLabelToggle.target = self; aiLabelToggle.action = #selector(toggleAILabel(_:))
+        aiLabelToggle.state = UserDefaults.standard.bool(forKey: "ctxAILabeling") ? .on : .off
+        aiLabelToggle.toolTip = "Off: contexts use plain derived names. On: the on-device model names them (local only)."
+        let aiLabelNote = detail("Uses Apple's on-device model to suggest context names. Fully local — nothing leaves your Mac. Requires Apple Intelligence (macOS 26+).")
 
 
         // — Favicons —
@@ -316,6 +325,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         ])
         let contextsVC = makePaneVC([
             ("Contexts", card([contextsToggle, contextsNote])),
+            ("Naming",   card([aiLabelToggle, aiLabelNote])),
         ])
         permsVC = makePaneVC([
             ("Accessibility", card([permRow, permDetail, accessButton])),
@@ -677,6 +687,9 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     @objc private func toggleContexts(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "showContexts")
     }
+    @objc private func toggleAILabel(_ sender: NSButton) {
+        UserDefaults.standard.set(sender.state == .on, forKey: "ctxAILabeling")
+    }
     @objc private func toggleFavicon(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "faviconLookup")
     }
@@ -717,6 +730,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         loginToggle.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
         menuIconToggle.state = UserDefaults.standard.bool(forKey: "showMenuIcon") ? .on : .off
         contextsToggle.state = UserDefaults.standard.bool(forKey: "showContexts") ? .on : .off
+        aiLabelToggle.state = UserDefaults.standard.bool(forKey: "ctxAILabeling") ? .on : .off
         autoUpdateToggle.state = updater.automaticallyChecksForUpdates ? .on : .off
         autoInstallToggle.state = updater.automaticallyDownloadsUpdates ? .on : .off
         syncNote()
