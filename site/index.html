@@ -572,9 +572,15 @@ Return the complete plugin.json and a runnable adapter script.</pre>
       p.setAttribute('stroke-dasharray',dash.toFixed(1)+' '+(L-dash).toFixed(1));
       p.style.filter='drop-shadow(0 0 5px rgba('+BEAM_RGB+','+(a*0.95).toFixed(2)+'))';
       beam.appendChild(p);
-      p.animate([{strokeDashoffset:k*step},{strokeDashoffset:k*step-L}],{duration:5000,easing:'linear'});
+      p.animate([{strokeDashoffset:k*step},{strokeDashoffset:k*step-L}],{duration:5000,easing:'linear',fill:'forwards'});
     }
-    setTimeout(()=>{ if(gen===beamGen) beam.innerHTML=''; }, 5200);   // clear the parked comet between sweeps
+    // End-of-sweep flash fix: without fill:'forwards', every path snapped back to dashoffset 0 when
+    // its animation finished — all 26 dashes (and their glows) stacked at the path start as one
+    // bright blob for the 200ms until the clear below. That was the "flicker". fill:'forwards'
+    // parks each offset (visually identical to the start position — dashoffset is periodic), and
+    // the beam fades out over the sweep's last 250ms so the clear happens invisibly.
+    beam.animate([{opacity:1},{opacity:1,offset:.95},{opacity:0}],{duration:5000,fill:'forwards'});
+    setTimeout(()=>{ if(gen===beamGen) beam.innerHTML=''; }, 5200);
   }
   function startBeam(){ requestAnimationFrame(sweepBeam); clearInterval(beamTimer); beamTimer=setInterval(()=>{ if(open) sweepBeam(); }, 30000); }
   function stopBeam(){ clearInterval(beamTimer); beam.innerHTML=''; }
