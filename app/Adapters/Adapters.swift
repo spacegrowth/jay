@@ -649,7 +649,7 @@ let ADAPTERS: [Adapter] = [
     Adapter(app: "Messages", enumerate: messagesContexts),   // recent conversations via AppleScript (Automation only)
     Adapter(app: "Mail",     enumerate: mailContexts),       // recent Inbox messages (subject + sender)
     Adapter(app: "Slack",    enumerate: slackContexts),      // sidebar channels/DMs via AX (Electron, AXManualAccessibility)
-    // TradingView and other hard/third-party targets are external plugins (see PluginHost).
+    // Hard / third-party targets are handled as external plugins (see PluginHost).
 ] + CHROMIUM_BROWSERS.map { name in Adapter(app: name, enumerate: { chromiumContexts(name) }) }
   + AX_BROWSERS.map { name in Adapter(app: name, enumerate: { axBrowserContexts(name) }) }
 
@@ -661,7 +661,7 @@ let ADAPTERS: [Adapter] = [
 private func genericContexts(skipApps: Set<String> = []) -> [TabRef] {
     // Skip any app whose adapter or plugin actually produced items — otherwise rich entries and
     // generic window entries would both show (double-listing). An adapter/plugin that returned
-    // nothing (e.g. Music with nothing playing, or TradingView without its debug port) does NOT
+    // nothing (e.g. Music with nothing playing, or a plugin that produced no items) does NOT
     // block the generic entry — the app still shows with its AX windows rather than vanishing.
     let covered = skipApps
     var refs: [TabRef] = []
@@ -815,7 +815,9 @@ private let slackNavRows: Set<String> = [
     "Channels", "Direct Messages", "Agents & apps", "Later", "Files", "Canvases", "Slackbot", "Slack",
 ]
 private let slackPresenceWords: Set<String> = ["Away", "Active"]
-private let slackRowCap = 20   // keep the switcher tight; Jay's type-to-filter reaches the rest
+// Section-header rows in the sidebar — used to tag each conversation as a channel vs a DM (a
+// conversation inherits the last section header seen above it in sidebar order).
+private let slackSectionRows: Set<String> = ["Channels", "Direct Messages", "Starred", "Agents & apps"]
 
 private func slackPid() -> pid_t? {
     NSWorkspace.shared.runningApplications.first { $0.localizedName == "Slack" }?.processIdentifier
@@ -861,19 +863,22 @@ private func slackRowName(_ row: AXUIElement) -> String {
 }
 
 /// Every conversation row (channel/DM) in the sidebar, in sidebar order.
-private func collectSlackRows(_ pid: pid_t) -> [(name: String, selected: Bool)] {
+private func collectSlackRows(_ pid: pid_t) -> [(name: String, isDM: Bool, selected: Bool)] {
     let app = AXUIElementCreateApplication(pid)
     AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)  // expose Electron tree
     guard let outline = slackSidebar(app) else { return [] }
-    var out: [(String, Bool)] = [], seen = Set<String>()
+    var out: [(String, Bool, Bool)] = [], seen = Set<String>()
+    var section = ""     // last section header seen in sidebar order — tags each conversation's kind
     func rows(_ e: AXUIElement) {
         for r in axChildren(e) {
             if axRole(r) == "AXRow" {
                 let name = slackRowName(r)
-                if !name.isEmpty, !slackNavRows.contains(name), !seen.contains(name) {
+                if slackSectionRows.contains(name) {
+                    section = name
+                } else if !name.isEmpty, !slackNavRows.contains(name), !seen.contains(name) {
                     seen.insert(name)
                     let sel = (axAttr(r, kAXSelectedAttribute as String) as? NSNumber)?.boolValue ?? false
-                    out.append((name, sel))
+                    out.append((name, section == "Direct Messages", sel))
                 }
             }
             rows(r)
@@ -885,12 +890,15 @@ private func collectSlackRows(_ pid: pid_t) -> [(name: String, selected: Bool)] 
 
 private func slackContexts() -> [TabRef] {
     guard let pid = slackPid() else { return [] }
-    let rows = collectSlackRows(pid).prefix(slackRowCap)
-    var refs = rows.map { row in
-        TabRef(app: "Slack", group: "Slack", title: row.name, url: nil,
+    let rows = collectSlackRows(pid)
+    // DMs first (own section), then channels. Return ALL — the switcher only shows this list when
+    // you drill into Slack, and type-to-filter searches the full set, so nothing is capped away.
+    func ref(_ row: (name: String, isDM: Bool, selected: Bool)) -> TabRef {
+        TabRef(app: "Slack", group: row.isDM ? "Direct Messages" : "Channels", title: row.name, url: nil,
                isActive: row.selected,
                activate: { activateSlackRow(pid: pid, name: row.name) })
     }
+    var refs = rows.filter { $0.isDM }.map(ref) + rows.filter { !$0.isDM }.map(ref)
     if refs.isEmpty {   // cold start (Chromium tree not built on the very first probe) or nothing joined
         refs.append(TabRef(app: "Slack", group: "Slack", title: "Slack", url: nil,
                            activate: { NSRunningApplication(processIdentifier: pid)?.activate() }))
