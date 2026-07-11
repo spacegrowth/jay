@@ -648,6 +648,7 @@ let ADAPTERS: [Adapter] = [
     Adapter(app: "Music",    enumerate: musicContexts),      // Now Playing + Recently Played smart playlist
     Adapter(app: "Messages", enumerate: messagesContexts),   // recent conversations via AppleScript (Automation only)
     Adapter(app: "Mail",     enumerate: mailContexts),       // recent Inbox messages (subject + sender)
+    Adapter(app: "Slack",    enumerate: slackContexts),      // sidebar channels/DMs via AX (Electron, AXManualAccessibility)
     // TradingView and other hard/third-party targets are external plugins (see PluginHost).
 ] + CHROMIUM_BROWSERS.map { name in Adapter(app: name, enumerate: { chromiumContexts(name) }) }
   + AX_BROWSERS.map { name in Adapter(app: name, enumerate: { axBrowserContexts(name) }) }
@@ -798,6 +799,142 @@ private func axBrowserActiveTitle(_ appName: String) -> String? {
     guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == appName }) else { return nil }
     let els = collectAXTabs(AXUIElementCreateApplication(app.processIdentifier))
     return (els.first(where: { axSelected($0) && axOnScreen($0) }) ?? els.first(where: axSelected)).map(axTitle)
+}
+
+// MARK: - Slack (Electron / AX)
+//
+// Slack is Electron: its content Accessibility tree is hidden until we set AXManualAccessibility on
+// the process — then the sidebar is an AXOutline of AXRows (channels + DMs). We list those and
+// switch by AXPressing the row (re-found by name at click time, like the AX browser adapter).
+// Recency follows Slack's OWN sidebar sort — set Slack ▸ Preferences ▸ Sidebar ▸ Sort to "Recent
+// activity" for most-recent-first. No API token, no Full Disk Access — reuses Jay's AX permission.
+
+// Sidebar rows that are navigation/section headers, not conversations — skipped by name.
+private let slackNavRows: Set<String> = [
+    "Threads", "Huddles", "Drafts & sent", "Drafts", "Directories", "Starred",
+    "Channels", "Direct Messages", "Agents & apps", "Later", "Files", "Canvases", "Slackbot", "Slack",
+]
+private let slackPresenceWords: Set<String> = ["Away", "Active"]
+private let slackRowCap = 20   // keep the switcher tight; Jay's type-to-filter reaches the rest
+
+private func slackPid() -> pid_t? {
+    NSWorkspace.shared.runningApplications.first { $0.localizedName == "Slack" }?.processIdentifier
+}
+
+/// First AXOutline under the app element (the sidebar). Bounded walk, stops at the first hit.
+private func slackSidebar(_ root: AXUIElement) -> AXUIElement? {
+    var found: AXUIElement?
+    func walk(_ e: AXUIElement, _ d: Int) {
+        if found != nil || d > 26 { return }
+        if axRole(e) == "AXOutline" { found = e; return }
+        for c in axChildren(e) { walk(c, d + 1) }
+    }
+    walk(root, 0)
+    return found
+}
+
+/// Title → description → value. Channel/DM names live in an AXStaticText's *value*, not its title,
+/// so plain axTitle misses them.
+private func slackText(_ e: AXUIElement) -> String {
+    if let t = axAttr(e, kAXTitleAttribute as String) as? String, !t.isEmpty { return t }
+    if let d = axAttr(e, kAXDescriptionAttribute as String) as? String, !d.isEmpty { return d }
+    if let v = axAttr(e, kAXValueAttribute as String) as? String, !v.isEmpty { return v }
+    return ""
+}
+
+/// A conversation row's name: its own text (nav/section rows), else the first descendant text that
+/// isn't a presence word (DM rows lead with an "Away"/"Active" presence element before the name).
+private func slackRowName(_ row: AXUIElement) -> String {
+    let own = slackText(row)
+    if !own.isEmpty && !slackPresenceWords.contains(own) { return own }
+    var name = ""
+    func scan(_ e: AXUIElement, _ d: Int) {
+        if !name.isEmpty || d > 6 { return }
+        for c in axChildren(e) {
+            let t = slackText(c)
+            if !t.isEmpty && !slackPresenceWords.contains(t) { name = t; return }
+            scan(c, d + 1)
+        }
+    }
+    scan(row, 0)
+    return name
+}
+
+/// Every conversation row (channel/DM) in the sidebar, in sidebar order.
+private func collectSlackRows(_ pid: pid_t) -> [(name: String, selected: Bool)] {
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)  // expose Electron tree
+    guard let outline = slackSidebar(app) else { return [] }
+    var out: [(String, Bool)] = [], seen = Set<String>()
+    func rows(_ e: AXUIElement) {
+        for r in axChildren(e) {
+            if axRole(r) == "AXRow" {
+                let name = slackRowName(r)
+                if !name.isEmpty, !slackNavRows.contains(name), !seen.contains(name) {
+                    seen.insert(name)
+                    let sel = (axAttr(r, kAXSelectedAttribute as String) as? NSNumber)?.boolValue ?? false
+                    out.append((name, sel))
+                }
+            }
+            rows(r)
+        }
+    }
+    rows(outline)
+    return out
+}
+
+private func slackContexts() -> [TabRef] {
+    guard let pid = slackPid() else { return [] }
+    let rows = collectSlackRows(pid).prefix(slackRowCap)
+    var refs = rows.map { row in
+        TabRef(app: "Slack", group: "Slack", title: row.name, url: nil,
+               isActive: row.selected,
+               activate: { activateSlackRow(pid: pid, name: row.name) })
+    }
+    if refs.isEmpty {   // cold start (Chromium tree not built on the very first probe) or nothing joined
+        refs.append(TabRef(app: "Slack", group: "Slack", title: "Slack", url: nil,
+                           activate: { NSRunningApplication(processIdentifier: pid)?.activate() }))
+    }
+    return refs
+}
+
+/// Switch to a Slack conversation: re-find its row by name (elements go stale between summons),
+/// bring Slack forward, press the row.
+private func activateSlackRow(pid: pid_t, name: String) {
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    guard let outline = slackSidebar(app) else { return }
+    var target: AXUIElement?
+    func find(_ e: AXUIElement) {
+        for r in axChildren(e) {
+            if target != nil { return }
+            if axRole(r) == "AXRow", slackRowName(r) == name { target = r; return }
+            find(r)
+        }
+    }
+    find(outline)
+    guard let row = target else { return }
+    NSRunningApplication(processIdentifier: pid)?.activate()
+    // The AXRow advertises AXPress but is a no-op; the click is handled by an inner element (an
+    // AXGroup). Press the first DESCENDANT that actually responds to AXPress.
+    if let pressable = slackPressTarget(row) {
+        AXUIElementPerformAction(pressable, kAXPressAction as CFString)
+    }
+}
+
+/// Actions an element supports.
+private func axActions(_ e: AXUIElement) -> [String] {
+    var a: CFArray?
+    return AXUIElementCopyActionNames(e, &a) == .success ? (a as? [String] ?? []) : []
+}
+
+/// First descendant (not the row itself) that actually responds to AXPress.
+private func slackPressTarget(_ row: AXUIElement) -> AXUIElement? {
+    for c in axChildren(row) {
+        if axActions(c).contains("AXPress") { return c }
+        if let d = slackPressTarget(c) { return d }
+    }
+    return nil
 }
 
 // MARK: - Public ops
