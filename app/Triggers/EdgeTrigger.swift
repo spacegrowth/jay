@@ -77,15 +77,20 @@ final class LeftEdgeWatcher {
         let yFromTop = (f.maxY - p.y) / f.height * 100                  // 0 = top, 100 = bottom
         guard top < bot, yFromTop >= top, yFromTop <= bot else { reset(); return }
 
-        // Pick the physical vertical edge: left if exposed, else right if exposed, else none.
-        let atEdge: Bool
-        if !hasNeighbor(of: screen, on: .left) {
-            atEdge = p.x <= f.minX + 1.5
-        } else if !hasNeighbor(of: screen, on: .right) {
-            atEdge = p.x >= f.maxX - 1.5
+        // Trigger on the SAME edge the panel appears at (Preferences ▸ Panel side), so the summon
+        // gesture matches where Jay shows up. Honor the preference, but only where that edge is a real
+        // outer wall — if the preferred side abuts another monitor (a seam), fall back to the exposed
+        // side; if both sides are seams (sandwiched), there's no wall to push into.
+        let preferRight = d.string(forKey: "panelSide") == "right"
+        let leftWall = !hasNeighbor(of: screen, on: .left)
+        let rightWall = !hasNeighbor(of: screen, on: .right)
+        let onRight: Bool
+        if preferRight {
+            if rightWall { onRight = true } else if leftWall { onRight = false } else { reset(); return }
         } else {
-            reset(); return                                            // screens on both sides → no wall
+            if leftWall { onRight = false } else if rightWall { onRight = true } else { reset(); return }
         }
+        let atEdge = onRight ? (p.x >= f.maxX - 1.5) : (p.x <= f.minX + 1.5)
 
         if atEdge {
             if !inZone {                                               // entering the zone → arm the dwell (fires once)
