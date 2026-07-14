@@ -1889,11 +1889,21 @@ final class SwitcherPanel: NSObject, NSSearchFieldDelegate, NSTableViewDataSourc
     }
     // Right-anchored when a screen sits immediately to this one's LEFT (its left edge is internal),
     // so its exposed/physical edge is the right — matches the EdgeTrigger.
+    /// Which edge the panel anchors to on screen `s`. Honors the user's Left/Right preference, but
+    /// keeps it off the seam between monitors: if the preferred edge abuts another screen (an internal
+    /// boundary, not a true outer wall), it flips to the opposite edge. So "Right" means the right OUTER
+    /// edge of whichever screen you summon on — never the gap.
     private func anchorRightFor(_ s: NSScreen) -> Bool {
         let f = s.frame
-        return NSScreen.screens.contains { o in
-            o !== s && o.frame.minY < f.maxY && o.frame.maxY > f.minY && abs(o.frame.maxX - f.minX) < 2
+        func touches(rightEdge: Bool) -> Bool {                 // another screen abuts s's right (or left) edge?
+            NSScreen.screens.contains { o in
+                guard o !== s, o.frame.minY < f.maxY, o.frame.maxY > f.minY else { return false }
+                return rightEdge ? abs(o.frame.minX - f.maxX) < 2 : abs(o.frame.maxX - f.minX) < 2
+            }
         }
+        let preferRight = UserDefaults.standard.string(forKey: "panelSide") == "right"
+        if preferRight { return !touches(rightEdge: true) }     // want right; if right is a seam, use left
+        return touches(rightEdge: false)                        // want left (default); if left is a seam, use right
     }
 
     // Small tertiary glyph that leads a section header (Pinned, Contexts, …). One place so they match.

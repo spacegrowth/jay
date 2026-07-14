@@ -106,6 +106,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     private let autoUpdateToggle = NSButton(checkboxWithTitle: "Automatically check for updates", target: nil, action: nil)
     private let autoInstallToggle = NSButton(checkboxWithTitle: "Install updates in the background", target: nil, action: nil)
     private let edgeToggle = NSButton(checkboxWithTitle: "Summon at left screen edge", target: nil, action: nil)
+    private let sideSeg = NSSegmentedControl(labels: ["Left", "Right"], trackingMode: .selectOne, target: nil, action: nil)
     private let contextsToggle = NSButton(checkboxWithTitle: "Show Contexts", target: nil, action: nil)
     private let aiLabelToggle = NSButton(checkboxWithTitle: "Name contexts with on-device AI", target: nil, action: nil)
     private let faviconToggle = NSButton(checkboxWithTitle: "Fetch site icons from the network", target: nil, action: nil)
@@ -215,6 +216,15 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         edgeBandLabel.font = .systemFont(ofSize: 11); edgeBandLabel.textColor = .secondaryLabelColor
         let edgeDetail = detail("Push the pointer into the screen edge to summon. Drag the handles to limit where along the edge it triggers.")
 
+        // — Panel side — which edge the panel slides in from (hotkey or edge summon).
+        sideSeg.selectedSegment = (UserDefaults.standard.string(forKey: "panelSide") == "right") ? 1 : 0
+        sideSeg.target = self; sideSeg.action = #selector(changeSide(_:))
+        sideSeg.segmentDistribution = .fillEqually
+        let sideLabel = NSTextField(labelWithString: "Panel side"); sideLabel.font = .systemFont(ofSize: 13)
+        let sideRow = NSStackView(views: [sideLabel, NSView(), sideSeg])
+        sideRow.orientation = .horizontal; sideRow.spacing = 10
+        let sideDetail = detail("Which screen edge Jay appears at. On two monitors it stays on the true outer edge — never the gap between screens.")
+
         // — Startup —
         loginToggle.font = .systemFont(ofSize: 13)
         loginToggle.target = self; loginToggle.action = #selector(toggleLogin(_:))
@@ -320,6 +330,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
         generalVC = makePaneVC([
             ("Summon shortcut", card([triggerPopup, recorder, note, shortcutDetail])),
             ("Screen edge",     card([edgeToggle, edgeRange, edgeBandLabel, edgeDetail])),
+            ("Panel side",      card([sideRow, sideDetail])),
             ("Startup",         card([loginToggle, menuIconToggle, autoUpdateToggle, autoInstallToggle])),
             ("Site icons",      card([faviconToggle, faviconNote])),
         ])
@@ -683,6 +694,9 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     @objc private func toggleEdge(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "edgeTrigger")
         syncEdge()
+    }
+    @objc private func changeSide(_ sender: NSSegmentedControl) {
+        UserDefaults.standard.set(sender.selectedSegment == 1 ? "right" : "left", forKey: "panelSide")
     }
     @objc private func toggleContexts(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "showContexts")
